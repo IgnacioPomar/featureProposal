@@ -46,9 +46,6 @@ springdoc:
 
 logging:
   config: classpath:log4j2-spring.xml
-  level:
-    liquibase.changelog: INFO
-    liquibase.executor: DEBUG
 
 management:
   endpoints:

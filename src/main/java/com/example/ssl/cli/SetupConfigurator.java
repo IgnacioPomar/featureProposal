@@ -7,17 +7,24 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Scanner;
 import liquibase.Contexts;
 import liquibase.LabelExpression;
 import liquibase.Liquibase;
+import liquibase.changelog.ChangeLogParameters;
 import liquibase.database.Database;
 import liquibase.database.DatabaseFactory;
 import liquibase.database.jvm.JdbcConnection;
+import liquibase.parser.ChangeLogParserFactory;
 import liquibase.resource.ClassLoaderResourceAccessor;
+import liquibase.resource.ResourceAccessor;
 
 /**
  * Performs setup actions before Spring starts.
@@ -312,14 +319,23 @@ public class SetupConfigurator {
             printInfo("Applying database schema with Liquibase from setup...");
             try (Connection connection = DriverManager.getConnection(
                     dbConfig.jdbcUrl(), dbConfig.username(), dbConfig.password())) {
+                String changeLog = "db/changelog/db.changelog-master.json";
+                int totalPlanned = countPlannedChangeSets(changeLog);
+                int beforeApplied = countAppliedChangeSets(connection);
+
                 Database database = DatabaseFactory.getInstance()
                         .findCorrectDatabaseImplementation(new JdbcConnection(connection));
                 Liquibase liquibase = new Liquibase(
-                        "db/changelog/db.changelog-master.json",
+                        changeLog,
                         new ClassLoaderResourceAccessor(Thread.currentThread().getContextClassLoader()),
                         database
                 );
                 liquibase.update(new Contexts(), new LabelExpression());
+
+                int afterApplied = countAppliedChangeSets(connection);
+                int appliedNow = Math.max(0, afterApplied - beforeApplied);
+                List<AppliedChangeSet> latest = readLatestAppliedChangeSets(connection, appliedNow);
+                printLiquibaseSummary(changeLog, totalPlanned, beforeApplied, appliedNow, afterApplied, latest);
                 printSuccess("Liquibase migration completed from setup.");
                 return;
             } catch (Exception exception) {
@@ -334,6 +350,80 @@ public class SetupConfigurator {
                 dbConfig = corrected;
             }
         }
+    }
+
+    private int countPlannedChangeSets(String changeLogPath) throws Exception {
+        ResourceAccessor accessor = new ClassLoaderResourceAccessor(Thread.currentThread().getContextClassLoader());
+        return ChangeLogParserFactory.getInstance()
+                .getParser(changeLogPath, accessor)
+                .parse(changeLogPath, new ChangeLogParameters(), accessor)
+                .getChangeSets()
+                .size();
+    }
+
+    private int countAppliedChangeSets(Connection connection) {
+        try (Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("SELECT COUNT(*) FROM DATABASECHANGELOG")) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+            return 0;
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private List<AppliedChangeSet> readLatestAppliedChangeSets(Connection connection, int maxRows) {
+        List<AppliedChangeSet> rows = new ArrayList<>();
+        if (maxRows <= 0) {
+            return rows;
+        }
+
+        String sql = "SELECT ID, AUTHOR, FILENAME, DATEEXECUTED, ORDEREXECUTED FROM DATABASECHANGELOG "
+                + "ORDER BY DATEEXECUTED DESC, ORDEREXECUTED DESC";
+        try (Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery(sql)) {
+            while (rs.next() && rows.size() < maxRows) {
+                rows.add(new AppliedChangeSet(
+                        rs.getString("ID"),
+                        rs.getString("AUTHOR"),
+                        rs.getString("FILENAME"),
+                        String.valueOf(rs.getObject("DATEEXECUTED"))
+                ));
+            }
+        } catch (Exception ignored) {
+            // Keep summary available even if details cannot be read.
+        }
+        return rows;
+    }
+
+    private void printLiquibaseSummary(
+            String changeLog,
+            int totalPlanned,
+            int beforeApplied,
+            int appliedNow,
+            int afterApplied,
+            List<AppliedChangeSet> latestChanges
+    ) {
+        System.out.println();
+        System.out.println(ANSI_BOLD + "Liquibase Update Summary" + ANSI_RESET);
+        System.out.println("ChangeLog: " + changeLog);
+        System.out.println("Planned changesets: " + totalPlanned);
+        System.out.println("Previously applied: " + beforeApplied);
+        System.out.println("Applied now: " + appliedNow);
+        System.out.println("Total applied: " + afterApplied);
+
+        if (appliedNow == 0) {
+            System.out.println("Details: Database already up to date.");
+        } else if (latestChanges.isEmpty()) {
+            System.out.println("Details: Applied changesets, but detailed rows could not be read from DATABASECHANGELOG.");
+        } else {
+            System.out.println("Details:");
+            for (AppliedChangeSet row : latestChanges) {
+                System.out.println(" - " + row.id() + " | " + row.author() + " | " + row.filename() + " | " + row.dateExecuted());
+            }
+        }
+        System.out.println();
     }
 
     private Path writeSetupFile(String outputPath, String sslPassword, DbConfig dbConfig, CertificateConfig certificateConfig)
@@ -416,5 +506,8 @@ public class SetupConfigurator {
     }
 
     private record CertificateConfig(Path keystorePath, String alias) {
+    }
+
+    private record AppliedChangeSet(String id, String author, String filename, String dateExecuted) {
     }
 }
