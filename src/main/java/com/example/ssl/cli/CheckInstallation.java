@@ -20,6 +20,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import javax.sql.DataSource;
+import liquibase.change.Change;
+import liquibase.change.core.CreateTableChange;
+import liquibase.changelog.ChangeLogParameters;
+import liquibase.changelog.ChangeSet;
+import liquibase.changelog.DatabaseChangeLog;
+import liquibase.parser.ChangeLogParserFactory;
+import liquibase.resource.ClassLoaderResourceAccessor;
+import liquibase.resource.ResourceAccessor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.boot.ApplicationArguments;
@@ -34,44 +42,21 @@ public class CheckInstallation {
 
     private static final Logger LOGGER = LogManager.getLogger(CheckInstallation.class);
 
-    private static final String[] REQUIRED_VARIABLES = {
-            "SSL_KEYSTORE_PASSWORD",
-            "APP_DATASOURCE_URL",
-            "APP_DATASOURCE_USERNAME",
-            "APP_DATASOURCE_PASSWORD"
-    };
-
-    private static final Map<String, String> REQUIRED_VARIABLE_DEFAULTS = Map.of(
-            "SSL_KEYSTORE_PASSWORD", "changeit",
-            "APP_DATASOURCE_URL", "jdbc:h2:file:./target/db/sslapp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE",
-            "APP_DATASOURCE_USERNAME", "sa",
-            "APP_DATASOURCE_PASSWORD", ""
-    );
-
-    private static final String DEFAULT_DATASOURCE_URL =
-            "jdbc:h2:file:./target/db/sslapp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE";
-    private static final String DEFAULT_DATASOURCE_USERNAME = "sa";
-    private static final String DEFAULT_DATASOURCE_PASSWORD = "";
-
-    private static final Map<String, Set<String>> REQUIRED_TABLE_COLUMNS = new LinkedHashMap<>();
-
-    static {
-        REQUIRED_TABLE_COLUMNS.put("task_item", Set.of("id", "title", "done", "created_at", "updated_at"));
-        REQUIRED_TABLE_COLUMNS.put("archive", Set.of("id", "title", "done", "created_at", "updated_at"));
-    }
-
     private final DataSource dataSource;
     private final Environment environment;
     private final ApplicationArguments applicationArguments;
+    private final ApplicationYamlDefaults applicationYamlDefaults;
 
     public CheckInstallation(
             DataSource dataSource,
             Environment environment,
-            ApplicationArguments applicationArguments
+            ApplicationArguments applicationArguments,
+            ApplicationYamlDefaults applicationYamlDefaults
     ) {
         this.dataSource = dataSource;
         this.environment = environment;
         this.applicationArguments = applicationArguments;
+        this.applicationYamlDefaults = applicationYamlDefaults;
     }
 
     /**
@@ -104,7 +89,6 @@ public class CheckInstallation {
 
         long failures = checks.stream().filter(c -> c.severity() == Severity.FAIL).count();
         long warnings = checks.stream().filter(c -> c.severity() == Severity.WARNING).count();
-
         LOGGER.info("Installation check finished. failures={}, warnings={}", failures, warnings);
 
         if (failures > 0) {
@@ -113,7 +97,7 @@ public class CheckInstallation {
     }
 
     private void checkRequiredVariables(List<CheckResult> checks) {
-        for (String variable : REQUIRED_VARIABLES) {
+        for (String variable : InstallationRequirements.REQUIRED_VARIABLES) {
             String propertyKey = toPropertyKey(variable);
             String envValue = System.getenv(variable);
             String systemPropertyValue = System.getProperty(propertyKey);
@@ -124,20 +108,10 @@ public class CheckInstallation {
                     || (systemPropertyValue != null && systemPropertyValue.isBlank());
 
             if (hasExplicitValue) {
-                checks.add(new CheckResult(
-                        Severity.PASS,
-                        "Required variable",
-                        variable,
-                        "Configured"
-                ));
+                checks.add(new CheckResult(Severity.PASS, "Required variable", variable, "Configured"));
             } else if (explicitlyDefinedButEmpty) {
-                checks.add(new CheckResult(
-                        Severity.FAIL,
-                        "Required variable",
-                        variable,
-                        "Defined but empty"
-                ));
-            } else if (REQUIRED_VARIABLE_DEFAULTS.containsKey(variable)) {
+                checks.add(new CheckResult(Severity.FAIL, "Required variable", variable, "Defined but empty"));
+            } else if (applicationYamlDefaults.hasDefault(variable)) {
                 checks.add(new CheckResult(
                         Severity.WARNING,
                         "Required variable",
@@ -161,11 +135,16 @@ public class CheckInstallation {
         String datasourcePassword = Optional.ofNullable(environment.getProperty("spring.datasource.password")).orElse("");
         String driverClassName = Optional.ofNullable(environment.getProperty("spring.datasource.driver-class-name")).orElse("");
 
-        boolean isDefaultConfiguration = DEFAULT_DATASOURCE_URL.equals(datasourceUrl)
-                && DEFAULT_DATASOURCE_USERNAME.equals(datasourceUsername)
-                && DEFAULT_DATASOURCE_PASSWORD.equals(datasourcePassword);
+        String defaultUrl = applicationYamlDefaults.defaultValue("APP_DATASOURCE_URL").orElse(null);
+        String defaultUsername = applicationYamlDefaults.defaultValue("APP_DATASOURCE_USERNAME").orElse(null);
+        String defaultPassword = applicationYamlDefaults.defaultValue("APP_DATASOURCE_PASSWORD").orElse(null);
 
-        if (isDefaultConfiguration) {
+        if (defaultUrl != null
+                && defaultUsername != null
+                && defaultPassword != null
+                && defaultUrl.equals(datasourceUrl)
+                && defaultUsername.equals(datasourceUsername)
+                && defaultPassword.equals(datasourcePassword)) {
             checks.add(new CheckResult(
                     Severity.WARNING,
                     "Database configuration",
@@ -220,10 +199,23 @@ public class CheckInstallation {
     }
 
     private void checkSchema(List<CheckResult> checks) {
+        Map<String, Set<String>> expectedSchema;
+        try {
+            expectedSchema = loadExpectedSchemaFromLiquibase();
+        } catch (Exception exception) {
+            checks.add(new CheckResult(
+                    Severity.FAIL,
+                    "Schema check",
+                    "Liquibase changelog",
+                    "Unable to parse Liquibase changelog: " + exception.getMessage()
+            ));
+            return;
+        }
+
         try (Connection connection = dataSource.getConnection()) {
             DatabaseMetaData metadata = connection.getMetaData();
 
-            for (Map.Entry<String, Set<String>> tableEntry : REQUIRED_TABLE_COLUMNS.entrySet()) {
+            for (Map.Entry<String, Set<String>> tableEntry : expectedSchema.entrySet()) {
                 String tableName = tableEntry.getKey();
                 Set<String> requiredColumns = tableEntry.getValue();
 
@@ -288,19 +280,53 @@ public class CheckInstallation {
         }
     }
 
+    private Map<String, Set<String>> loadExpectedSchemaFromLiquibase() throws Exception {
+        String configuredChangeLog = Optional.ofNullable(environment.getProperty("spring.liquibase.change-log"))
+                .orElse("classpath:db/changelog/db.changelog-master.json");
+        String changeLogPath = configuredChangeLog.startsWith("classpath:")
+                ? configuredChangeLog.substring("classpath:".length())
+                : configuredChangeLog;
+
+        ResourceAccessor accessor = new ClassLoaderResourceAccessor(Thread.currentThread().getContextClassLoader());
+        DatabaseChangeLog databaseChangeLog = ChangeLogParserFactory.getInstance()
+                .getParser(changeLogPath, accessor)
+                .parse(changeLogPath, new ChangeLogParameters(), accessor);
+
+        Map<String, Set<String>> expected = new LinkedHashMap<>();
+        for (ChangeSet changeSet : databaseChangeLog.getChangeSets()) {
+            for (Change change : changeSet.getChanges()) {
+                if (change instanceof CreateTableChange createTableChange) {
+                    String tableName = createTableChange.getTableName();
+                    if (tableName == null || tableName.isBlank()) {
+                        continue;
+                    }
+
+                    Set<String> columns = expected.computeIfAbsent(
+                            tableName.toLowerCase(Locale.ROOT),
+                            ignored -> new LinkedHashSet<>()
+                    );
+                    createTableChange.getColumns().forEach(columnConfig -> {
+                        if (columnConfig.getName() != null && !columnConfig.getName().isBlank()) {
+                            columns.add(columnConfig.getName().toLowerCase(Locale.ROOT));
+                        }
+                    });
+                }
+            }
+        }
+        return expected;
+    }
+
     private boolean tableExists(DatabaseMetaData metadata, String tableName) throws Exception {
         try (ResultSet rs = metadata.getTables(null, null, tableName, new String[]{"TABLE"})) {
             if (rs.next()) {
                 return true;
             }
         }
-
         try (ResultSet rs = metadata.getTables(null, null, tableName.toUpperCase(Locale.ROOT), new String[]{"TABLE"})) {
             if (rs.next()) {
                 return true;
             }
         }
-
         try (ResultSet rs = metadata.getTables(null, null, tableName.toLowerCase(Locale.ROOT), new String[]{"TABLE"})) {
             return rs.next();
         }
@@ -308,11 +334,9 @@ public class CheckInstallation {
 
     private Set<String> loadTableColumns(DatabaseMetaData metadata, String tableName) throws Exception {
         Set<String> columns = new LinkedHashSet<>();
-
         collectColumns(metadata, tableName, columns);
         collectColumns(metadata, tableName.toUpperCase(Locale.ROOT), columns);
         collectColumns(metadata, tableName.toLowerCase(Locale.ROOT), columns);
-
         return columns;
     }
 
@@ -329,12 +353,10 @@ public class CheckInstallation {
         if (values == null || values.isEmpty()) {
             return Optional.empty();
         }
-
         String value = values.get(0);
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("--to-file requires a valid target path");
         }
-
         return Optional.of(Path.of(value.trim()));
     }
 
