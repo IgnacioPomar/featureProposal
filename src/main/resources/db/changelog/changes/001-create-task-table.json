@@ -1,0 +1,90 @@
+{
+  "databaseChangeLog": [
+    {
+      "changeSet": {
+        "id": "001-create-task-table",
+        "author": "codex",
+        "preConditions": [
+          {
+            "onFail": "MARK_RAN"
+          },
+          {
+            "not": {
+              "tableExists": {
+                "tableName": "task_item"
+              }
+            }
+          }
+        ],
+        "changes": [
+          {
+            "createTable": {
+              "tableName": "task_item",
+              "columns": [
+                {
+                  "column": {
+                    "name": "id",
+                    "type": "UUID",
+                    "constraints": {
+                      "primaryKey": true,
+                      "primaryKeyName": "pk_task_item",
+                      "nullable": false
+                    }
+                  }
+                },
+                {
+                  "column": {
+                    "name": "title",
+                    "type": "VARCHAR(120)",
+                    "constraints": {
+                      "nullable": false
+                    }
+                  }
+                },
+                {
+                  "column": {
+                    "name": "done",
+                    "type": "BOOLEAN",
+                    "defaultValueBoolean": false,
+                    "constraints": {
+                      "nullable": false
+                    }
+                  }
+                },
+                {
+                  "column": {
+                    "name": "created_at",
+                    "type": "TIMESTAMP",
+                    "defaultValueComputed": "CURRENT_TIMESTAMP",
+                    "constraints": {
+                      "nullable": false
+                    }
+                  }
+                },
+                {
+                  "column": {
+                    "name": "updated_at",
+                    "type": "TIMESTAMP"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "createIndex": {
+              "tableName": "task_item",
+              "indexName": "idx_task_item_done",
+              "columns": [
+                {
+                  "column": {
+                    "name": "done"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

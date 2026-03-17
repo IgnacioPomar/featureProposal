@@ -7,6 +7,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,30 +26,61 @@ public class CertificateRenewer {
     private static final String PROP_EXTERNAL_MATERIAL_PASSWORD = "ssl.renew.external-material-password";
     private static final String DEFAULT_ALIAS = "ssl-app";
 
+    private final Environment environment;
+
+    public CertificateRenewer(Environment environment) {
+        this.environment = environment;
+    }
+
     /**
-     * Executes the renewal flow without propagating failures.
+     * Executes the renewal flow using command-line args and environment properties.
      */
     public void execute() {
         try {
-            Path sourceDirectory = requirePathProperty(PROP_SOURCE_DIR);
-            Path targetKeystore = requirePathProperty(PROP_TARGET_KEYSTORE);
-            char[] targetKeystorePassword = requireStringProperty(PROP_TARGET_PASSWORD).toCharArray();
-            char[] targetKeyPassword = optionalStringProperty(PROP_TARGET_KEY_PASSWORD)
-                    .map(String::toCharArray)
-                    .orElse(targetKeystorePassword);
-            String alias = optionalStringProperty(PROP_TARGET_ALIAS).orElse(DEFAULT_ALIAS);
-            Path externalKeyPath = optionalStringProperty(PROP_EXTERNAL_KEY_PATH).map(Path::of).orElse(null);
-            char[] externalMaterialPassword = optionalStringProperty(PROP_EXTERNAL_MATERIAL_PASSWORD)
-                    .map(String::toCharArray)
-                    .orElse(new char[0]);
+            Path sourceDirectory = requirePath(
+                    PROP_SOURCE_DIR,
+                    "renew.directory",
+                    "renew-directory",
+                    "directory",
+                    "RENEW_DIRECTORY",
+                    "APP_CERT_RENEW_DIRECTORY",
+                    "SSL_RENEW_SOURCE_DIR"
+            );
 
-            Path tempKeystore = buildTempKeystorePath(targetKeystore);
-            Path previousKeystore = buildPreviousKeystorePath(targetKeystore);
+            Path targetKeystore = optionalPath(PROP_TARGET_KEYSTORE)
+                    .or(() -> optionalPath("app.certificate-page.target-keystore"))
+                    .orElse(Path.of("./target/classes/ssl/keystore.p12"));
 
-            CertificateImport certificateImport = new CertificateImport();
-            CertificateImport.ImportResult result = certificateImport.execute(
+            char[] targetKeystorePassword = requireString(
+                    PROP_TARGET_PASSWORD,
+                    "server.ssl.key-store-password",
+                    "SSL_KEYSTORE_PASSWORD"
+            ).toCharArray();
+
+            char[] targetKeyPassword = optionalString(
+                    PROP_TARGET_KEY_PASSWORD,
+                    "server.ssl.key-password",
+                    "SSL_KEY_PASSWORD"
+            ).map(String::toCharArray).orElse(targetKeystorePassword);
+
+            String alias = optionalString(PROP_TARGET_ALIAS, "app.certificate-page.alias", "server.ssl.key-alias")
+                    .orElse(DEFAULT_ALIAS);
+
+            Path externalKeyPath = optionalPath(PROP_EXTERNAL_KEY_PATH).orElse(null);
+
+            char[] externalMaterialPassword = requireString(
+                    PROP_EXTERNAL_MATERIAL_PASSWORD,
+                    "renew.password",
+                    "renew-password",
+                    "password",
+                    "RENEW_PASSWORD",
+                    "APP_CERT_RENEW_PASSWORD",
+                    "SSL_RENEW_EXTERNAL_MATERIAL_PASSWORD"
+            ).toCharArray();
+
+            CertificateImport.ImportResult result = renew(
                     sourceDirectory,
-                    tempKeystore,
+                    targetKeystore,
                     targetKeystorePassword,
                     targetKeyPassword,
                     alias,
@@ -56,41 +88,89 @@ public class CertificateRenewer {
                     externalMaterialPassword
             );
 
-            replaceKeystore(targetKeystore, tempKeystore, previousKeystore);
-            Files.deleteIfExists(previousKeystore);
-
             LOGGER.info("Certificate renewal completed. Source={}, Expires={}",
                     result.certificatePath(), result.expirationDate());
             System.out.println("[CERTIFICATE] Renewal finished successfully. Imported from "
                     + result.certificatePath() + ", expiration=" + result.expirationDate());
         } catch (Exception exception) {
             LOGGER.error("Certificate renewal failed: {}", exception.getMessage());
-            System.err.println("[CERTIFICATE] Renewal failed: " + exception.getMessage());
+            throw new IllegalStateException("Certificate renewal failed: " + exception.getMessage(), exception);
         }
     }
 
-    private Path requirePathProperty(String key) {
-        String value = System.getProperty(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Missing required property: " + key);
-        }
-        return Path.of(value);
+    /**
+     * Executes renewal with explicit inputs for programmatic usage.
+     */
+    public CertificateImport.ImportResult renew(
+            Path sourceDirectory,
+            Path targetKeystore,
+            char[] targetKeystorePassword,
+            char[] targetKeyPassword,
+            String alias,
+            Path externalKeyPath,
+            char[] externalMaterialPassword
+    ) throws Exception {
+        Path tempKeystore = buildTempKeystorePath(targetKeystore);
+        Path previousKeystore = buildPreviousKeystorePath(targetKeystore);
+
+        CertificateImport certificateImport = new CertificateImport();
+        CertificateImport.ImportResult result = certificateImport.execute(
+                sourceDirectory,
+                tempKeystore,
+                targetKeystorePassword,
+                targetKeyPassword,
+                alias,
+                externalKeyPath,
+                externalMaterialPassword
+        );
+
+        replaceKeystore(targetKeystore, tempKeystore, previousKeystore);
+        Files.deleteIfExists(previousKeystore);
+        return result;
     }
 
-    private String requireStringProperty(String key) {
-        String value = System.getProperty(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Missing required property: " + key);
+    private Optional<String> optionalString(String... keys) {
+        for (String key : keys) {
+            String value = resolveValue(key);
+            if (value != null && !value.isBlank()) {
+                return Optional.of(value);
+            }
         }
-        return value;
+        return Optional.empty();
     }
 
-    private Optional<String> optionalStringProperty(String key) {
-        String value = System.getProperty(key);
-        if (value == null || value.isBlank()) {
-            return Optional.empty();
+    private String requireString(String... keys) {
+        return optionalString(keys)
+                .orElseThrow(() -> new IllegalArgumentException("Missing required configuration. One of: "
+                        + String.join(", ", keys)));
+    }
+
+    private Optional<Path> optionalPath(String... keys) {
+        return optionalString(keys).map(Path::of);
+    }
+
+    private Path requirePath(String... keys) {
+        return optionalPath(keys)
+                .orElseThrow(() -> new IllegalArgumentException("Missing required configuration. One of: "
+                        + String.join(", ", keys)));
+    }
+
+    private String resolveValue(String key) {
+        String systemValue = System.getProperty(key);
+        if (systemValue != null && !systemValue.isBlank()) {
+            return systemValue;
         }
-        return Optional.of(value);
+
+        String envValue = System.getenv(toEnvStyle(key));
+        if (envValue != null && !envValue.isBlank()) {
+            return envValue;
+        }
+
+        return environment.getProperty(key);
+    }
+
+    private String toEnvStyle(String key) {
+        return key.replace('.', '_').replace('-', '_').toUpperCase();
     }
 
     private Path buildTempKeystorePath(Path targetKeystore) {

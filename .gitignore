@@ -9,3 +9,7 @@ target/
 
 # OS
 .DS_Store
+
+
+# Generated files to pass to devcontainers
+testdata/

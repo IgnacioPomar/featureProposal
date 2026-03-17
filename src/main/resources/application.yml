@@ -3,7 +3,7 @@ server:
   ssl:
     enabled: true
     key-store: classpath:ssl/keystore.p12
-    key-store-password: changeit
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:changeit}
     key-store-type: PKCS12
     key-alias: ssl-app
 
@@ -12,6 +12,36 @@ spring:
     name: ssl-application
   main:
     banner-mode: "off"
+  datasource:
+    url: ${APP_DATASOURCE_URL:jdbc:h2:file:./target/db/sslapp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
+    username: ${APP_DATASOURCE_USERNAME:sa}
+    password: ${APP_DATASOURCE_PASSWORD:}
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.json
+
+app:
+  openapi:
+    title: ${APP_OPENAPI_TITLE:SSL Application API}
+    description: ${APP_OPENAPI_DESCRIPTION:OpenAPI para endpoint hello y CRUD de tareas}
+    version: ${APP_OPENAPI_VERSION:v1}
+  certificate-page:
+    path: ${APP_CERT_PAGE_PATH:/certificate-renewal}
+    target-keystore: ${APP_CERT_TARGET_KEYSTORE:./target/classes/ssl/keystore.p12}
+    alias: ${APP_CERT_ALIAS:ssl-app}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
 
 logging:
   config: classpath:log4j2-spring.xml

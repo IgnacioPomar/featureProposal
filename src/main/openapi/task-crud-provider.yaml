@@ -1,0 +1,151 @@
+openapi: 3.0.3
+info:
+  title: Provider Task CRUD Contract
+  version: 1.0.0
+  description: Contrato OpenAPI simulado como descargado desde proveedor externo.
+servers:
+  - url: https://localhost:8443
+    description: Entorno local SSL
+paths:
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      operationId: listTasks
+      summary: Listar tasks
+      responses:
+        '200':
+          description: Lista de tareas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskItemPayload'
+    post:
+      tags: [Tasks]
+      operationId: createTask
+      summary: Crear task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskItemUpsertPayload'
+      responses:
+        '201':
+          description: Task creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskItemPayload'
+        '400':
+          description: Petición inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Tasks]
+      operationId: getTaskById
+      summary: Obtener task por id
+      responses:
+        '200':
+          description: Task encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskItemPayload'
+        '404':
+          description: No encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Tasks]
+      operationId: updateTask
+      summary: Actualizar task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskItemUpsertPayload'
+      responses:
+        '200':
+          description: Task actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskItemPayload'
+        '400':
+          description: Petición inválida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Tasks]
+      operationId: deleteTask
+      summary: Eliminar task
+      responses:
+        '204':
+          description: Eliminada
+        '404':
+          description: No encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    TaskItemPayload:
+      type: object
+      required: [id, title, done, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 120
+        done:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+    TaskItemUpsertPayload:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        done:
+          type: boolean
+          default: false
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

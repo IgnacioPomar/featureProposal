@@ -1,0 +1,46 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-archive-table
+      author: codex
+      preConditions:
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: archive
+      changes:
+        - createTable:
+            tableName: archive
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_archive
+                    nullable: false
+              - column:
+                  name: title
+                  type: VARCHAR(120)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: done
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+        - createIndex:
+            tableName: archive
+            indexName: idx_archive_done
+            columns:
+              - column:
+                  name: done

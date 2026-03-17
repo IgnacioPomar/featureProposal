@@ -1,0 +1,14 @@
+{
+  "databaseChangeLog": [
+    {
+      "include": {
+        "file": "db/changelog/changes/001-create-task-table.json"
+      }
+    },
+    {
+      "include": {
+        "file": "db/changelog/changes/003-create-archive-table.yaml"
+      }
+    }
+  ]
+}
