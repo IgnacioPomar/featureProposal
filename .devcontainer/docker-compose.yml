@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/java:1-21-bookworm
+    volumes:
+      - ..:/workspace:cached
+    command: sleep infinity
+    depends_on:
+      - mariadb
+
+  mariadb:
+    image: mariadb:12
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: appdb
+      MARIADB_USER: appuser
+      MARIADB_PASSWORD: apppass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+volumes:
+  mariadb-data:
