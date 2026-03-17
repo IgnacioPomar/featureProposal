@@ -1,22 +1,22 @@
 # SSL Application PoC
 
-PoC en **Spring Boot 3 + Java 21** para ejecutar un servicio web HTTPS, exponer documentación OpenAPI y ofrecer operaciones CLI.
+A **Spring Boot 3 + Java 21** proof of concept that runs an HTTPS service, exposes OpenAPI documentation, provides a simple Hibernate CRUD, and includes certificate maintenance utilities.
 
-## Qué hace este proyecto
+## What this project does
 
-1. Expone API HTTPS en `8443`.
-2. Publica OpenAPI (`/api-docs`) y Swagger UI (`/swagger-ui.html`).
-3. Implementa un CRUD sencillo de tareas usando **Hibernate (JPA)**.
-4. Crea y versiona la tabla del CRUD con **Liquibase**.
-5. Mantiene utilidades CLI para checks/renovación de certificados.
+1. Runs an HTTPS API on port `8443`.
+2. Exposes OpenAPI docs (`/api-docs`) and Swagger UI (`/swagger-ui.html`).
+3. Implements a simple Task CRUD with **Hibernate (JPA)**.
+4. Manages schema evolution with **Liquibase**.
+5. Includes CLI tools for installation checks and certificate renewal.
 
-## Endpoints principales
+## Main endpoints
 
-### API base
+### Base API
 
 - `GET /hello`
 
-### CRUD tasks
+### Task CRUD
 
 - `POST /api/tasks`
 - `GET /api/tasks`
@@ -24,90 +24,113 @@ PoC en **Spring Boot 3 + Java 21** para ejecutar un servicio web HTTPS, exponer 
 - `PUT /api/tasks/{id}`
 - `DELETE /api/tasks/{id}`
 
-Payload ejemplo (create/update):
+Example payload (create/update):
 
 ```json
 {
-  "title": "Mi primera tarea",
+  "title": "My first task",
   "done": false
 }
 ```
 
 ### OpenAPI
 
-- JSON OpenAPI: `GET /api-docs`
+- OpenAPI JSON: `GET /api-docs`
 - Swagger UI: `GET /swagger-ui.html`
 
-## Base de datos y migraciones
+### Certificate Renewal Page
 
-- Motor por defecto: **H2** en archivo local `./target/db/sslapp`.
-- Tabla CRUD principal: `task_item` (id UUID).
-- Tabla comparativa en YAML: `archive` (mismos campos, id UUID).
-- Migración Liquibase:
+- `GET /certificate-renewal`
+  - Returns an HTML form (`directory`, `password`) and shows current certificate details.
+- `POST /certificate-renewal`
+  - Renews the keystore certificate and shows a before/after comparison plus a refresh link.
+
+## Database and migrations
+
+- Default DB: **H2** file database at `./target/db/sslapp`.
+- Main CRUD table: `task_item` (UUID id).
+- YAML comparison table: `archive` (same fields, UUID id).
+- Liquibase changelogs:
   - `src/main/resources/db/changelog/db.changelog-master.json`
   - `src/main/resources/db/changelog/changes/001-create-task-table.json`
 
-Columnas creadas:
+Main columns:
 
-- `id` (PK UUID)
+- `id` (UUID primary key)
 - `title` (varchar 120, not null)
 - `done` (boolean, not null)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
 
-## Configuración
+## Configuration
 
-Variables soportadas:
+Common variables:
 
 - `SSL_KEYSTORE_PASSWORD` (default: `changeit`)
 - `APP_DATASOURCE_URL`
 - `APP_DATASOURCE_USERNAME`
 - `APP_DATASOURCE_PASSWORD`
 
-## Ejecución
+Certificate page settings (`application.yml`):
 
-### Levantar servidor HTTPS
+- `app.certificate-page.path` (default: `/certificate-renewal`)
+- `app.certificate-page.target-keystore` (default: `./target/classes/ssl/keystore.p12`)
+- `app.certificate-page.alias` (default: `ssl-app`)
+
+## Run
+
+### Start HTTPS server
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-### Probar endpoints
+### Quick endpoint checks
 
 ```bash
 curl -k https://localhost:8443/hello
 curl -k https://localhost:8443/api/tasks
 curl -k https://localhost:8443/api-docs
+curl -k https://localhost:8443/certificate-renewal
 ```
 
-### Ejecutar tests
+### Run tests
 
 ```bash
 ./mvnw test
 ```
 
-## Comandos CLI disponibles
+## CLI commands
+
+Available flags:
 
 - `--check-installation`
 - `--setup`
 - `--renew-certificate`
 
-Ejemplos:
+Examples:
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.arguments="--check-installation"
 ./mvnw spring-boot:run -Dspring-boot.run.arguments="--setup"
-./mvnw spring-boot:run -Dspring-boot.run.arguments="--renew-certificate"
+./mvnw spring-boot:run -Dspring-boot.run.arguments="--renew-certificate --renew-directory=/workspace/testdata/certs/180d-pem --renew-password=changeit"
 ```
 
-## Estructura relevante
+`--renew-certificate` accepts input via:
 
-- `src/main/java/com/example/ssl/crud/`: entidad, repositorio, servicio y controlador CRUD.
-- `src/main/java/com/example/ssl/openapi/OpenApiConfiguration.java`: metadatos OpenAPI.
-- `src/main/resources/db/changelog/`: migraciones Liquibase.
-- `src/main/resources/application.yml`: SSL, datasource, JPA, Liquibase y springdoc.
+- CLI args: `--renew-directory`, `--renew-password`
+- Environment variables: `RENEW_DIRECTORY`, `RENEW_PASSWORD`
 
-## Estado PoC
+## Relevant structure
 
-- CRUD + OpenAPI + Liquibase: implementado.
-- Check real de instalación BBDD e instalador interactivo CLI: pendiente de completar.
+- `src/main/java/com/example/ssl/crud/`: entity, repository, service, and CRUD controller.
+- `src/main/java/com/example/ssl/openapi/OpenApiConfiguration.java`: OpenAPI metadata.
+- `src/main/java/com/example/ssl/web/CertificateRenewalPageController.java`: HTML certificate renewal endpoint.
+- `src/main/java/com/example/ssl/cli/`: setup, install checks, certificate import/renew utilities.
+- `src/main/resources/db/changelog/`: Liquibase migrations.
+- `src/main/resources/application.yml`: SSL, datasource, JPA, Liquibase, springdoc, and certificate-page settings.
+
+## PoC status
+
+- HTTPS + CRUD + OpenAPI + Liquibase + certificate renewal (web/CLI): implemented.
+- Full installation wizard and deeper DB validation workflow: partially implemented / pending hardening.
