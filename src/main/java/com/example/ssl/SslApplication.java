@@ -1,8 +1,8 @@
 package com.example.ssl;
 
 import com.example.ssl.cli.CertificateRenewer;
-import com.example.ssl.cli.CheckInstallation;
 import com.example.ssl.cli.SetupConfigurator;
+import com.example.ssl.cli.StandaloneInstallationCheck;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.boot.SpringApplication;
@@ -29,10 +29,14 @@ public class SslApplication {
             new SetupConfigurator().execute();
             System.exit(0);
         }
+        if (argsList.contains("--check-installation")) {
+            int exitCode = new StandaloneInstallationCheck().execute(args);
+            System.exit(exitCode);
+        }
 
         // For CLI tasks, we disable web environment to speed up execution and reduce resource usage
         SpringApplication app = new SpringApplication(SslApplication.class);
-        boolean isCliMode = argsList.contains("--check-installation") || argsList.contains("--renew-certificate");
+        boolean isCliMode = argsList.contains("--renew-certificate");
         if (isCliMode) {
             app.setWebApplicationType(WebApplicationType.NONE);
         }
@@ -57,9 +61,7 @@ public class SslApplication {
      */
     private static void runCliTask(ConfigurableApplicationContext context, List<String> argsList) {
         try {
-            if (argsList.contains("--check-installation")) {
-                context.getBean(CheckInstallation.class).execute();
-            } else if (argsList.contains("--renew-certificate")) {
+            if (argsList.contains("--renew-certificate")) {
                 context.getBean(CertificateRenewer.class).execute();
             }
             System.exit(0);

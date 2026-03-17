@@ -41,6 +41,12 @@ import org.springframework.stereotype.Component;
 public class CheckInstallation {
 
     private static final Logger LOGGER = LogManager.getLogger(CheckInstallation.class);
+    private static final Map<String, List<String>> REQUIRED_PROPERTY_ALIASES = Map.of(
+            "SSL_KEYSTORE_PASSWORD", List.of("server.ssl.key-store-password"),
+            "APP_DATASOURCE_URL", List.of("spring.datasource.url"),
+            "APP_DATASOURCE_USERNAME", List.of("spring.datasource.username"),
+            "APP_DATASOURCE_PASSWORD", List.of("spring.datasource.password")
+    );
 
     private final DataSource dataSource;
     private final Environment environment;
@@ -98,14 +104,9 @@ public class CheckInstallation {
 
     private void checkRequiredVariables(List<CheckResult> checks) {
         for (String variable : InstallationRequirements.REQUIRED_VARIABLES) {
-            String propertyKey = toPropertyKey(variable);
-            String envValue = System.getenv(variable);
-            String systemPropertyValue = System.getProperty(propertyKey);
-
-            boolean hasExplicitValue = (envValue != null && !envValue.isBlank())
-                    || (systemPropertyValue != null && !systemPropertyValue.isBlank());
-            boolean explicitlyDefinedButEmpty = (envValue != null && envValue.isBlank())
-                    || (systemPropertyValue != null && systemPropertyValue.isBlank());
+            List<String> aliases = REQUIRED_PROPERTY_ALIASES.getOrDefault(variable, List.of());
+            boolean hasExplicitValue = hasConfiguredValue(variable, aliases);
+            boolean explicitlyDefinedButEmpty = hasExplicitEmptyValue(variable, aliases);
 
             if (hasExplicitValue) {
                 checks.add(new CheckResult(Severity.PASS, "Required variable", variable, "Configured"));
@@ -130,9 +131,24 @@ public class CheckInstallation {
     }
 
     private void checkDatabaseConfigurationWarnings(List<CheckResult> checks) {
-        String datasourceUrl = Optional.ofNullable(environment.getProperty("spring.datasource.url")).orElse("");
-        String datasourceUsername = Optional.ofNullable(environment.getProperty("spring.datasource.username")).orElse("");
-        String datasourcePassword = Optional.ofNullable(environment.getProperty("spring.datasource.password")).orElse("");
+        String datasourceUrl = firstNonBlank(
+                environment.getProperty("spring.datasource.url"),
+                environment.getProperty("APP_DATASOURCE_URL"),
+                System.getProperty("APP_DATASOURCE_URL"),
+                System.getenv("APP_DATASOURCE_URL")
+        );
+        String datasourceUsername = firstNonBlank(
+                environment.getProperty("spring.datasource.username"),
+                environment.getProperty("APP_DATASOURCE_USERNAME"),
+                System.getProperty("APP_DATASOURCE_USERNAME"),
+                System.getenv("APP_DATASOURCE_USERNAME")
+        );
+        String datasourcePassword = firstNonBlank(
+                environment.getProperty("spring.datasource.password"),
+                environment.getProperty("APP_DATASOURCE_PASSWORD"),
+                System.getProperty("APP_DATASOURCE_PASSWORD"),
+                System.getenv("APP_DATASOURCE_PASSWORD")
+        );
         String driverClassName = Optional.ofNullable(environment.getProperty("spring.datasource.driver-class-name")).orElse("");
 
         String defaultUrl = applicationYamlDefaults.defaultValue("APP_DATASOURCE_URL").orElse(null);
@@ -370,6 +386,66 @@ public class CheckInstallation {
 
     private String toPropertyKey(String variableName) {
         return variableName.toLowerCase(Locale.ROOT).replace('_', '.');
+    }
+
+    private String toEnvStyle(String key) {
+        return key.replace('.', '_').replace('-', '_').toUpperCase(Locale.ROOT);
+    }
+
+    private boolean hasConfiguredValue(String variable, List<String> aliases) {
+        for (String key : allLookupKeys(variable, aliases)) {
+            String envValue = System.getenv(toEnvStyle(key));
+            if (envValue != null && !envValue.isBlank()) {
+                return true;
+            }
+
+            String systemValue = System.getProperty(key);
+            if (systemValue != null && !systemValue.isBlank()) {
+                return true;
+            }
+
+            String environmentValue = environment.getProperty(key);
+            if (environmentValue != null && !environmentValue.isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasExplicitEmptyValue(String variable, List<String> aliases) {
+        for (String key : allLookupKeys(variable, aliases)) {
+            String envName = toEnvStyle(key);
+            if (System.getenv(envName) != null && System.getenv(envName).isBlank()) {
+                return true;
+            }
+            if (System.getProperty(key) != null && System.getProperty(key).isBlank()) {
+                return true;
+            }
+            if (environment.containsProperty(key)) {
+                String value = environment.getProperty(key);
+                if (value == null || value.isBlank()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private List<String> allLookupKeys(String variable, List<String> aliases) {
+        List<String> keys = new ArrayList<>();
+        keys.add(variable);
+        keys.add(toPropertyKey(variable));
+        keys.addAll(aliases);
+        return keys;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private String buildHtmlReport(List<CheckResult> checks) {

@@ -13,3 +13,6 @@ target/
 
 # Generated files to pass to devcontainers
 testdata/
+
+#local configuration
+config/
