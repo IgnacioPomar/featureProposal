@@ -1,0 +1,203 @@
+package es.zaleos.certificate.renewer.core;
+
+import java.io.IOException;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.PrivateKey;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.bouncycastle.openssl.PKCS8Generator;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
+import org.bouncycastle.openssl.jcajce.JcaPKCS8Generator;
+import org.bouncycastle.openssl.jcajce.JceOpenSSLPKCS8EncryptorBuilder;
+import org.bouncycastle.operator.OutputEncryptor;
+
+/**
+ * Writes TLS material as PEM files and swaps it safely into place.
+ */
+public class PemTlsMaterialWriter {
+
+    public PemActivationResult writeAtomically(
+            PemTlsMaterial material,
+            PemTlsTargetPaths targetPaths,
+            char[] privateKeyPassword,
+            boolean allowUnencryptedPrivateKey
+    ) throws Exception {
+        if (targetPaths == null || targetPaths.allConfiguredPaths().isEmpty()) {
+            throw new IllegalArgumentException("At least one target PEM path must be configured.");
+        }
+        if (!allowUnencryptedPrivateKey && (privateKeyPassword == null || privateKeyPassword.length == 0)) {
+            throw new IllegalArgumentException(
+                    "Writing an unencrypted private-key.pem is disabled and no output key password was provided.");
+        }
+
+        Path stagingDirectory = Files.createTempDirectory("zaleos-certificate-stage-");
+        Map<Path, Path> stagedFiles = new LinkedHashMap<>();
+        Map<Path, Path> backupFiles = new LinkedHashMap<>();
+
+        try {
+            stagePemFiles(material, targetPaths, privateKeyPassword, stagedFiles, stagingDirectory);
+            createParentDirectories(targetPaths);
+            backupExistingFiles(targetPaths, backupFiles);
+            moveStagedFiles(stagedFiles);
+
+            return new PemActivationResult(
+                    material.sourcePath(),
+                    targetPaths.certificatePath(),
+                    targetPaths.fullChainPath(),
+                    targetPaths.privateKeyPath(),
+                    material.expirationDate()
+            );
+        } catch (Exception exception) {
+            restoreBackups(backupFiles, stagedFiles.keySet());
+            throw exception;
+        } finally {
+            cleanupBackups(backupFiles);
+            deleteDirectoryQuietly(stagingDirectory);
+        }
+    }
+
+    private void stagePemFiles(
+            PemTlsMaterial material,
+            PemTlsTargetPaths targetPaths,
+            char[] privateKeyPassword,
+            Map<Path, Path> stagedFiles,
+            Path stagingDirectory
+    ) throws Exception {
+        if (targetPaths.certificatePath() != null) {
+            stagedFiles.put(targetPaths.certificatePath(),
+                    writeCertificateFile(stagingDirectory.resolve("certificate.pem"), List.of(material.leafCertificate())));
+        }
+        if (targetPaths.chainPath() != null) {
+            stagedFiles.put(targetPaths.chainPath(),
+                    writeCertificateFile(stagingDirectory.resolve("chain.pem"), chainOnly(material.orderedChain())));
+        }
+        if (targetPaths.fullChainPath() != null) {
+            stagedFiles.put(targetPaths.fullChainPath(),
+                    writeCertificateFile(stagingDirectory.resolve("fullchain.pem"), material.orderedChain()));
+        }
+        if (targetPaths.privateKeyPath() != null) {
+            stagedFiles.put(targetPaths.privateKeyPath(),
+                    writePrivateKeyFile(stagingDirectory.resolve("private-key.pem"), material.privateKey(), privateKeyPassword));
+        }
+    }
+
+    private List<X509Certificate> chainOnly(List<X509Certificate> orderedChain) {
+        if (orderedChain.size() <= 1) {
+            return List.of();
+        }
+        return orderedChain.subList(1, orderedChain.size());
+    }
+
+    private Path writeCertificateFile(Path target, List<X509Certificate> certificates) throws Exception {
+        if (target.getParent() != null) {
+            Files.createDirectories(target.getParent());
+        }
+        try (Writer writer = Files.newBufferedWriter(target, StandardCharsets.US_ASCII);
+             JcaPEMWriter pemWriter = new JcaPEMWriter(writer)) {
+            for (X509Certificate certificate : certificates) {
+                pemWriter.writeObject(certificate);
+            }
+        }
+        return target;
+    }
+
+    private Path writePrivateKeyFile(Path target, PrivateKey privateKey, char[] password) throws Exception {
+        if (target.getParent() != null) {
+            Files.createDirectories(target.getParent());
+        }
+        try (Writer writer = Files.newBufferedWriter(target, StandardCharsets.US_ASCII);
+             JcaPEMWriter pemWriter = new JcaPEMWriter(writer)) {
+            if (password != null && password.length > 0) {
+                OutputEncryptor encryptor = new JceOpenSSLPKCS8EncryptorBuilder(PKCS8Generator.AES_256_CBC)
+                        .setRandom(new SecureRandom())
+                        .setPassword(password)
+                        .build();
+                pemWriter.writeObject(new JcaPKCS8Generator(privateKey, encryptor));
+            } else {
+                pemWriter.writeObject(privateKey);
+            }
+        }
+        return target;
+    }
+
+    private void createParentDirectories(PemTlsTargetPaths targetPaths) throws IOException {
+        for (Path path : targetPaths.allConfiguredPaths()) {
+            if (path.getParent() != null) {
+                Files.createDirectories(path.getParent());
+            }
+        }
+    }
+
+    private void backupExistingFiles(PemTlsTargetPaths targetPaths, Map<Path, Path> backupFiles) throws IOException {
+        for (Path targetPath : targetPaths.allConfiguredPaths()) {
+            if (!Files.exists(targetPath)) {
+                continue;
+            }
+            Path backupPath = Path.of(targetPath.toString() + ".bak");
+            Files.deleteIfExists(backupPath);
+            Files.move(targetPath, backupPath, StandardCopyOption.REPLACE_EXISTING);
+            backupFiles.put(targetPath, backupPath);
+        }
+    }
+
+    private void moveStagedFiles(Map<Path, Path> stagedFiles) throws IOException {
+        for (Map.Entry<Path, Path> entry : stagedFiles.entrySet()) {
+            moveWithAtomicFallback(entry.getValue(), entry.getKey());
+        }
+    }
+
+    private void restoreBackups(Map<Path, Path> backupFiles, java.util.Set<Path> targetPaths) {
+        for (Path targetPath : targetPaths) {
+            try {
+                Files.deleteIfExists(targetPath);
+            } catch (IOException ignored) {
+            }
+        }
+
+        for (Map.Entry<Path, Path> backupEntry : backupFiles.entrySet()) {
+            try {
+                moveWithAtomicFallback(backupEntry.getValue(), backupEntry.getKey());
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private void cleanupBackups(Map<Path, Path> backupFiles) {
+        List<Path> backupPaths = new ArrayList<>(backupFiles.values());
+        for (Path backupPath : backupPaths) {
+            try {
+                Files.deleteIfExists(backupPath);
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private void moveWithAtomicFallback(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void deleteDirectoryQuietly(Path directory) {
+        try (var walk = Files.walk(directory)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException ignored) {
+                }
+            });
+        } catch (IOException ignored) {
+        }
+    }
+}

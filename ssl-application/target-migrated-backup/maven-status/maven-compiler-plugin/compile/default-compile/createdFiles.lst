@@ -1,0 +1,5 @@
+com/example/ssl/openapi/generated/api/ApiUtil.class
+com/example/ssl/openapi/generated/model/ErrorResponse.class
+com/example/ssl/openapi/generated/model/TaskItemUpsertPayload.class
+com/example/ssl/openapi/generated/model/TaskItemPayload.class
+com/example/ssl/openapi/generated/api/TasksApi.class
