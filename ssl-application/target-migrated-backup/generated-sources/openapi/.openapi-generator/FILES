@@ -1,7 +1,0 @@
-README.md
-pom.xml
-src/main/java/com/example/ssl/openapi/generated/api/ApiUtil.java
-src/main/java/com/example/ssl/openapi/generated/api/TasksApi.java
-src/main/java/com/example/ssl/openapi/generated/model/ErrorResponse.java
-src/main/java/com/example/ssl/openapi/generated/model/TaskItemPayload.java
-src/main/java/com/example/ssl/openapi/generated/model/TaskItemUpsertPayload.java

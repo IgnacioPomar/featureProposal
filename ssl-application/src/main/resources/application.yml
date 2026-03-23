@@ -2,16 +2,22 @@ server:
   port: 8443
   ssl:
     enabled: true
-    key-store: classpath:ssl/keystore.p12
-    key-store-password: ${SSL_KEYSTORE_PASSWORD:changeit}
-    key-store-type: PKCS12
-    key-alias: ssl-app
+    bundle: server
 
 spring:
   application:
     name: ssl-application
   main:
     banner-mode: "off"
+  ssl:
+    bundle:
+      pem:
+        server:
+          reload-on-update: true
+          keystore:
+            certificate: file:./target/classes/ssl/fullchain.pem
+            private-key: file:./target/classes/ssl/private-key.pem
+            private-key-password: ${APP_TLS_PRIVATE_KEY_PASSWORD:}
   datasource:
     url: ${APP_DATASOURCE_URL:jdbc:h2:file:./target/db/sslapp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
     username: ${APP_DATASOURCE_USERNAME:sa}
@@ -33,10 +39,20 @@ app:
     title: ${APP_OPENAPI_TITLE:SSL Application API}
     description: ${APP_OPENAPI_DESCRIPTION:OpenAPI para endpoint hello y CRUD de tareas}
     version: ${APP_OPENAPI_VERSION:v1}
-  certificate-page:
-    path: ${APP_CERT_PAGE_PATH:/certificate-renewal}
-    target-keystore: ${APP_CERT_TARGET_KEYSTORE:./target/classes/ssl/keystore.p12}
-    alias: ${APP_CERT_ALIAS:ssl-app}
+  tls-page:
+    path: ${APP_TLS_PAGE_PATH:/certificate-renewal}
+    target-dir: ${APP_TLS_TARGET_DIR:./target/classes/ssl}
+    target-name: ${APP_TLS_TARGET_NAME:web-server}
+
+zaleos:
+  certificate:
+    output:
+      write-unencrypted-private-key: true
+    targets:
+      web-server:
+        type: filesystem
+        output-dir: ./target/classes/ssl
+        activate: true
 
 springdoc:
   api-docs:

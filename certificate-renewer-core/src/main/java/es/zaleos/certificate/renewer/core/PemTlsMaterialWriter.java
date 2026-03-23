@@ -7,6 +7,9 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -48,6 +51,8 @@ public class PemTlsMaterialWriter {
             createParentDirectories(targetPaths);
             backupExistingFiles(targetPaths, backupFiles);
             moveStagedFiles(stagedFiles);
+
+            applySecurePermissions(targetPaths);
 
             return new PemActivationResult(
                     material.sourcePath(),
@@ -186,6 +191,25 @@ public class PemTlsMaterialWriter {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException exception) {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private void applySecurePermissions(PemTlsTargetPaths targetPaths) {
+        try {
+            Path keyPath = targetPaths.privateKeyPath();
+            if (keyPath != null && Files.exists(keyPath)) {
+                Set<PosixFilePermission> keyPerms = PosixFilePermissions.fromString("rw-------");
+                Files.setPosixFilePermissions(keyPath, keyPerms);
+            }
+            Path dir = keyPath != null ? keyPath.getParent() : null;
+            if (dir != null && Files.exists(dir)) {
+                Set<PosixFilePermission> dirPerms = PosixFilePermissions.fromString("rwx------");
+                Files.setPosixFilePermissions(dir, dirPerms);
+            }
+        } catch (UnsupportedOperationException ignored) {
+            // Non-POSIX filesystem (e.g. Windows dev environment) — skip silently
+        } catch (IOException ignored) {
+            // Best-effort — do not fail the write because of permission enforcement
         }
     }
 

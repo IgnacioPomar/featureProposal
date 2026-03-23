@@ -1,6 +1,6 @@
 # Zaleos Certificate Starter — Technical Specification
 
-> **Version**: 1.2-draft
+> **Version**: 1.3-draft
 > **Date**: 2026-03-23
 > **Scope**: Reusable Spring Boot starter for PEM TLS material management, targeting Java applications compliant with the NENA i3 standard.
 
@@ -129,6 +129,17 @@ All input material shall be normalized to four PEM files:
 
 If no usable private key can be extracted, the operation shall fail with a descriptive error before any file is written.
 
+### 5.1 Archive selection rules
+
+When multiple candidate materials are found in the same archive or source folder, selection shall be deterministic:
+
+1. Prefer a PKCS#12 container if exactly one valid container containing a private key is present.
+2. Otherwise prefer a complete PEM bundle containing a private key and at least one certificate.
+3. Otherwise combine: one private key file + one leaf certificate file + zero or more chain certificate files.
+4. If more than one equally valid candidate set remains after the above steps, fail with an explicit ambiguity error.
+
+This determinism prevents silent misselection when operators provide multiple certificate files in a single archive.
+
 ---
 
 ## 6. Validation Policy Engine
@@ -140,7 +151,7 @@ Before activating any new material, the starter shall compare the candidate agai
 | Policy | Property | Default | Description |
 |---|---|---|---|
 | Same root CA | `sameRootCa` | `true` | Candidate must share the same trust root. **Required by NENA.** |
-| Same intermediate chain | `sameChain` | `true` | Intermediate fingerprints must match |
+| Same intermediate chain | `sameChain` | `true` | Same root CA fingerprint + same ordered intermediate fingerprints (leaf excluded) |
 | Same Subject DN | `sameSubject` | `true` | CN and subject attributes must not change |
 | Same SANs | `sameSan` | `true` | Subject Alternative Names must not change |
 | Same public key | `samePublicKey` | `true` | Public key must not change (renewal, not replacement) |
@@ -260,12 +271,37 @@ zaleos.certificate.maintenance:
 
 The active maintenance endpoints shall be protected with JWS tokens (see §10). The token shall be signed with the **currently installed TLS certificate**. This creates a natural trust bootstrap: only a party that already holds the active certificate can authorize a rotation.
 
-Required claim: `zaleos.certificates.maintenance: true`
+#### Mandatory token claims
+
+| Claim | Requirement | Notes |
+|---|---|---|
+| `exp` | Mandatory | Token expiry; rejected if exceeded (with configurable clock skew) |
+| `iat` | Mandatory | Issued-at; protects against pre-issued tokens |
+| `jti` | Mandatory | Unique token ID; prevents replay |
+| `zaleos.certificates.maintenance` | Mandatory, `true` | Authorizes maintenance operations |
+| `op` | Mandatory | Operation identifier: `import-and-activate`, `import-only`, or `rollback` |
+| `sha256` | Mandatory for upload | SHA-256 hex of the uploaded payload; verifier rejects if the received payload does not match |
+
+Clock skew tolerance is configurable: `zaleos.certificate.maintenance.jwt.clock-skew=30s` (default).
 
 Constraints:
 - The first import after bootstrap must use an alternative mechanism (CLI or direct file placement), since no real CA-issued certificate is yet available to sign a JWS token with.
 - Subsequent rotations can be fully remote and automated.
 - If `maintenance.enabled` is `false`, all import operations must go through the CLI or the inbox folder watcher.
+
+### 9.3 Operation modes
+
+The maintenance API supports three operation modes, controlled by the `op` token claim and by request parameters:
+
+| Mode | `op` value | Behaviour |
+|---|---|---|
+| Import and activate | `import-and-activate` | Validate, write, and immediately activate material. Default. |
+| Import only | `import-only` | Validate and write material to the staging directory (`<output-dir>/.staged/<timestamp>/`) without activating. |
+| Activate staged | `activate-staged` | Activate the most recent valid staged material without re-importing. |
+
+The staging directory path is `<output-dir>/.staged/<timestamp>/`. When `activate-staged` is called without an explicit operation ID, the most recent valid staged set is used.
+
+Upload endpoint size limit: configurable via `zaleos.certificate.maintenance.upload.max-size` (default `20MB`).
 
 ---
 
@@ -349,7 +385,7 @@ Constraints:
 
 ---
 
-## 11. Bootstrap Mechanism
+## 12. Bootstrap Mechanism
 
 On startup, if no usable TLS material is found for a configured target, the starter shall generate a self-signed placeholder certificate to allow the application to start with HTTPS active.
 
@@ -373,7 +409,7 @@ Bootstrap generation shall be skipped if:
 
 ---
 
-## 12. Configuration Reference
+## 13. Configuration Reference
 
 ```yaml
 zaleos:
@@ -399,6 +435,11 @@ zaleos:
       minimum-key-size: 2048             # NENA required
       expected-root-ca:                  # explicit PCA trust anchor (NENA)
 
+    source:                              # import source defaults (overrideable per request)
+      folder:                            # default source directory for import-from-folder
+      private-key-password: ${TLS_SOURCE_PASSWORD}
+      pkcs12-password: ${TLS_SOURCE_PASSWORD}
+
     maintenance:
       enabled: true                      # master switch
       import-from-folder:
@@ -407,9 +448,12 @@ zaleos:
       import-upload:
         enabled: true
         path: /internal/certificates/import-upload
+        max-size: 20MB
       rollback:
         enabled: true
         path: /internal/certificates/rollback
+      jwt:
+        clock-skew: 30s
 
     targets:
       web-server:                        # built-in target for HTTPS
@@ -436,7 +480,7 @@ zaleos:
 
 ---
 
-## 13. Spring Boot Integration
+## 14. Spring Boot Integration
 
 The HTTPS server shall be configured using Spring Boot's standard SSL bundle mechanism:
 
@@ -460,7 +504,7 @@ This configuration requires no proprietary Tomcat APIs and is portable across Sp
 
 ---
 
-## 14. CLI Commands
+## 15. CLI Commands
 
 The demo application exposes the following CLI commands for operator use:
 
@@ -473,7 +517,7 @@ The demo application exposes the following CLI commands for operator use:
 
 ---
 
-## 15. Named Targets
+## 16. Named Targets
 
 ### `web-server` (built-in)
 
@@ -497,7 +541,7 @@ The demo application exposes the following CLI commands for operator use:
 
 ---
 
-## 16. Observability
+## 17. Observability
 
 The starter shall expose the following via Spring Boot Actuator:
 
@@ -511,20 +555,20 @@ These metrics enable alerting on approaching expiry and verification that rotati
 
 ---
 
-## 17. Roadmap
+## 18. Roadmap
 
 ### Phase 1 — Consolidation
 
-- [ ] `ZaleosCertificateJwsVerifier` bean with `x5c` chain validation and signature verification
-- [ ] `JwtDecoder` Spring Security adapter backed by the verifier
-- [ ] Import API endpoints protected by `ZaleosCertificateJwsVerifier` (individually enable/disable per endpoint)
-- [ ] `SslBundleRegistry.updateBundle()` called from the API path
-- [ ] JVM-local mutex preventing concurrent imports
-- [ ] `TlsMaterialActivatedEvent` published after each successful activation
-- [ ] `expectedRootCa` policy for explicit PCA trust anchor
-- [ ] Filesystem permission enforcement on private key files (`600`)
-- [ ] Manual rollback endpoint
-- [ ] Starter property documentation for library consumers
+- [x] `ZaleosCertificateJwsVerifier` bean with `x5c` chain validation and signature verification
+- [x] `JwtDecoder` Spring Security adapter backed by the verifier
+- [x] Import API endpoints protected by `ZaleosCertificateJwsVerifier` (individually enable/disable per endpoint)
+- [ ] `SslBundleRegistry.updateBundle()` called from the API path (pending Spring Boot 4 PemSslBundle API investigation; file watcher covers the use case)
+- [x] JVM-local mutex preventing concurrent imports
+- [x] `TlsMaterialActivatedEvent` published after each successful activation
+- [x] `expectedRootCa` policy for explicit PCA trust anchor
+- [x] Filesystem permission enforcement on private key files (`600`)
+- [x] Manual rollback endpoint
+- [ ] Starter property documentation for library consumers (`spring-configuration-metadata.json`)
 
 ### Phase 2 — Operational Safety
 

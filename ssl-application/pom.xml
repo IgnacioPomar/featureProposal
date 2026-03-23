@@ -4,8 +4,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.example</groupId>
-        <artifactId>ssl-application-parent</artifactId>
+        <groupId>es.zaleos</groupId>
+        <artifactId>zaleos-certificate-parent</artifactId>
         <version>0.0.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
@@ -16,7 +16,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.example</groupId>
+            <groupId>es.zaleos</groupId>
             <artifactId>certificate-renewer-spring-boot-starter</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -139,9 +139,9 @@
                             <inputSpec>${project.basedir}/src/main/openapi/task-crud-provider.yaml</inputSpec>
                             <output>${project.build.directory}/generated-sources/openapi</output>
                             <addCompileSourceRoot>true</addCompileSourceRoot>
-                            <apiPackage>com.example.ssl.openapi.generated.api</apiPackage>
-                            <modelPackage>com.example.ssl.openapi.generated.model</modelPackage>
-                            <invokerPackage>com.example.ssl.openapi.generated.invoker</invokerPackage>
+                            <apiPackage>es.zaleos.ssl.openapi.generated.api</apiPackage>
+                            <modelPackage>es.zaleos.ssl.openapi.generated.model</modelPackage>
+                            <invokerPackage>es.zaleos.ssl.openapi.generated.invoker</invokerPackage>
                             <configOptions>
                                 <interfaceOnly>true</interfaceOnly>
                                 <skipDefaultInterface>true</skipDefaultInterface>

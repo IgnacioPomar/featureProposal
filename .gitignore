@@ -16,3 +16,10 @@ testdata/
 
 #local configuration
 config/
+
+# TLS material — generated at runtime by bootstrap or import; must not be committed
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.der
+**/*.key

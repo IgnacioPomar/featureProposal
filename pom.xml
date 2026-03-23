@@ -10,12 +10,12 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.example</groupId>
-    <artifactId>ssl-application-parent</artifactId>
+    <groupId>es.zaleos</groupId>
+    <artifactId>zaleos-certificate-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>ssl-application-parent</name>
-    <description>Multi-module parent for the SSL demo application and certificate starter</description>
+    <name>zaleos-certificate-parent</name>
+    <description>Multi-module parent for the Zaleos certificate starter and demo application</description>
 
     <modules>
         <module>certificate-renewer-core</module>
