@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.PrivateKey;
-import java.security.Security;
 import java.security.Signature;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
@@ -21,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
@@ -29,7 +29,6 @@ import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMDecryptorProvider;
 import org.bouncycastle.openssl.PEMEncryptedKeyPair;
 import org.bouncycastle.openssl.PEMKeyPair;
@@ -45,15 +44,14 @@ import org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder;
  */
 public class PemTlsMaterialImporter {
 
+    private static final Logger LOGGER = Logger.getLogger(PemTlsMaterialImporter.class.getName());
     private static final List<String> CERT_EXTENSIONS = List.of(
             ".pem", ".crt", ".cer", ".der", ".p7b", ".p7c", ".p12", ".pfx");
     private static final List<String> KEY_EXTENSIONS = List.of(".key", ".pem", ".pk8");
-    private static final String BC = BouncyCastleProvider.PROVIDER_NAME;
+    private static final String BC = "BC";
 
     public PemTlsMaterialImporter() {
-        if (Security.getProvider(BC) == null) {
-            Security.addProvider(new BouncyCastleProvider());
-        }
+        BouncyCastleRegistrar.ensureRegistered();
     }
 
     public PemTlsMaterial importFrom(Path sourcePath, Path externalPrivateKeyPath, char[] sourcePassword) throws Exception {
@@ -125,8 +123,8 @@ public class PemTlsMaterialImporter {
                             matchingKey.get().privateKey(),
                             buildOrderedChain(leaf.get(), certificates)
                     ));
-                } catch (Exception ignored) {
-                    // Ignore invalid candidates and continue scanning.
+                } catch (Exception e) {
+                    LOGGER.fine(() -> "Skipping candidate file " + certificateFile.getFileName() + ": " + e.getMessage());
                 }
             }
         }
@@ -192,7 +190,8 @@ public class PemTlsMaterialImporter {
             try {
                 keys.add(new PrivateKeyCandidate(loadPrivateKey(externalPrivateKeyPath, externalMaterialPassword)));
                 uniquePaths.add(externalPrivateKeyPath.toAbsolutePath().normalize());
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                LOGGER.warning("Failed to load explicitly specified private key at " + externalPrivateKeyPath + ": " + e.getMessage());
             }
         }
 
@@ -205,7 +204,8 @@ public class PemTlsMaterialImporter {
                 try {
                     keys.add(new PrivateKeyCandidate(loadPrivateKey(path, externalMaterialPassword)));
                     uniquePaths.add(normalized);
-                } catch (Exception ignored) {
+                } catch (Exception e) {
+                    LOGGER.fine(() -> "Skipping key file " + path.getFileName() + ": " + e.getMessage());
                 }
             }
         }

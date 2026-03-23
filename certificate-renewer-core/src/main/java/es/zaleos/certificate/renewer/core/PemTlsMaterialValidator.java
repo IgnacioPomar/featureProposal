@@ -20,6 +20,12 @@ import java.util.Set;
  */
 public class PemTlsMaterialValidator {
 
+    /**
+     * CN suffix used to identify self-signed bootstrap placeholder certificates.
+     * The validator skips {@code same-*} policy checks when the current material carries this suffix.
+     */
+    public static final String PLACEHOLDER_CN_SUFFIX = ".installation.local";
+
     public void validate(
             PemTlsMaterial candidate,
             PemTlsMaterial current,
@@ -87,7 +93,7 @@ public class PemTlsMaterialValidator {
         X509Certificate leaf = material.leafCertificate();
         String subject = leaf.getSubjectX500Principal().getName();
         String issuer = leaf.getIssuerX500Principal().getName();
-        return subject.equals(issuer) && subject.contains(".installation.local");
+        return subject.equals(issuer) && subject.contains(PLACEHOLDER_CN_SUFFIX);
     }
 
     private X509Certificate rootCertificate(PemTlsMaterial material) {

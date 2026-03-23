@@ -1,20 +1,20 @@
 package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
 
+import es.zaleos.certificate.renewer.core.BouncyCastleRegistrar;
 import es.zaleos.certificate.renewer.core.InstallationTlsMaterialGenerator;
+import es.zaleos.certificate.renewer.core.PemTlsMaterialValidator;
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMKeyPair;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
@@ -31,7 +31,7 @@ import org.springframework.util.StringUtils;
  */
 public class ZaleosCertificateBootstrapInitializer implements InitializingBean {
 
-    private static final String BC = BouncyCastleProvider.PROVIDER_NAME;
+    private static final String BC = "BC";
     private static final Log LOGGER = LogFactory.getLog(ZaleosCertificateBootstrapInitializer.class);
 
     private final Environment environment;
@@ -49,9 +49,7 @@ public class ZaleosCertificateBootstrapInitializer implements InitializingBean {
         this.properties = properties;
         this.targetResolver = targetResolver;
         this.generator = generator;
-        if (Security.getProvider(BC) == null) {
-            Security.addProvider(new BouncyCastleProvider());
-        }
+        BouncyCastleRegistrar.ensureRegistered();
     }
 
     @Override
@@ -125,7 +123,7 @@ public class ZaleosCertificateBootstrapInitializer implements InitializingBean {
             return configured;
         }
         String applicationName = environment.getProperty("spring.application.name", "application");
-        return applicationName + "-" + targetName + ".installation.local";
+        return applicationName + "-" + targetName + PemTlsMaterialValidator.PLACEHOLDER_CN_SUFFIX;
     }
 
     private Path outputDirectoryOf(PemTlsTargetPaths targetPaths) {

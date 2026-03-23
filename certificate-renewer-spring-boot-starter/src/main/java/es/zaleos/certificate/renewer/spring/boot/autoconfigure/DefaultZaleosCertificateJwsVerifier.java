@@ -1,5 +1,7 @@
 package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import es.zaleos.certificate.renewer.core.PemTlsCurrentMaterialLoader;
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
 import java.io.ByteArrayInputStream;
@@ -10,7 +12,6 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -29,6 +30,7 @@ import org.springframework.context.event.EventListener;
 public class DefaultZaleosCertificateJwsVerifier implements ZaleosCertificateJwsVerifier {
 
     private static final Log LOG = LogFactory.getLog(DefaultZaleosCertificateJwsVerifier.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final ZaleosCertificateTargetResolver targetResolver;
     private final ZaleosCertificateProperties properties;
@@ -219,81 +221,11 @@ public class DefaultZaleosCertificateJwsVerifier implements ZaleosCertificateJws
         }
     }
 
-    /**
-     * Minimal JSON object parser sufficient for JWS header and payload.
-     * Handles string, number, boolean, array-of-strings, and null values.
-     */
     private Map<String, Object> parseJsonObject(String json) {
-        Map<String, Object> result = new HashMap<>();
-        String content = json.trim();
-        if (!content.startsWith("{") || !content.endsWith("}")) {
-            return result;
+        try {
+            return OBJECT_MAPPER.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            throw new JwsVerificationException("Failed to parse JWS JSON segment: " + e.getMessage(), e);
         }
-        content = content.substring(1, content.length() - 1).trim();
-        int i = 0;
-        while (i < content.length()) {
-            // Skip whitespace and commas
-            while (i < content.length() && (content.charAt(i) == ',' || Character.isWhitespace(content.charAt(i)))) {
-                i++;
-            }
-            if (i >= content.length()) break;
-            // Parse key
-            if (content.charAt(i) != '"') break;
-            int keyEnd = content.indexOf('"', i + 1);
-            if (keyEnd < 0) break;
-            String key = content.substring(i + 1, keyEnd);
-            i = keyEnd + 1;
-            // Skip colon
-            while (i < content.length() && content.charAt(i) != ':') i++;
-            i++;
-            while (i < content.length() && Character.isWhitespace(content.charAt(i))) i++;
-            // Parse value
-            char ch = content.charAt(i);
-            if (ch == '"') {
-                int valEnd = i + 1;
-                while (valEnd < content.length() && content.charAt(valEnd) != '"') {
-                    if (content.charAt(valEnd) == '\\') valEnd++;
-                    valEnd++;
-                }
-                result.put(key, content.substring(i + 1, valEnd));
-                i = valEnd + 1;
-            } else if (ch == '[') {
-                int depth = 1;
-                int start = i;
-                i++;
-                while (i < content.length() && depth > 0) {
-                    if (content.charAt(i) == '[') depth++;
-                    else if (content.charAt(i) == ']') depth--;
-                    i++;
-                }
-                String arrayContent = content.substring(start + 1, i - 1).trim();
-                List<String> list = new ArrayList<>();
-                for (String item : arrayContent.split(",")) {
-                    String trimmed = item.trim();
-                    if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
-                        list.add(trimmed.substring(1, trimmed.length() - 1));
-                    } else if (!trimmed.isEmpty()) {
-                        list.add(trimmed);
-                    }
-                }
-                result.put(key, list);
-            } else if (ch == 't' || ch == 'f') {
-                boolean val = ch == 't';
-                i += val ? 4 : 5;
-                result.put(key, val);
-            } else if (ch == 'n') {
-                i += 4;
-                result.put(key, null);
-            } else {
-                int start = i;
-                while (i < content.length() && content.charAt(i) != ',' && content.charAt(i) != '}') i++;
-                try {
-                    result.put(key, Long.parseLong(content.substring(start, i).trim()));
-                } catch (NumberFormatException e) {
-                    result.put(key, content.substring(start, i).trim());
-                }
-            }
-        }
-        return result;
     }
 }

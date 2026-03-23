@@ -47,6 +47,7 @@ app:
 zaleos:
   certificate:
     output:
+      # Demo only — do NOT enable in production; set APP_TLS_PRIVATE_KEY_PASSWORD instead.
       write-unencrypted-private-key: true
     targets:
       web-server:

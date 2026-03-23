@@ -4,6 +4,7 @@ import es.zaleos.certificate.renewer.core.PemActivationResult;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.Map;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -94,6 +95,13 @@ public class ZaleosCertificateMaintenanceController {
         }
         authenticate(authorizationHeader);
 
+        if (fullchain.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "fullchain file is empty"));
+        }
+        if (privateKey.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "privateKey file is empty"));
+        }
+
         Path tempDir = null;
         try {
             tempDir = Files.createTempDirectory("zaleos-upload-");
@@ -165,7 +173,7 @@ public class ZaleosCertificateMaintenanceController {
     private void deleteQuietly(Path dir) {
         if (dir == null) return;
         try (var walk = Files.walk(dir)) {
-            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
                 try { Files.deleteIfExists(p); } catch (IOException ignored) {}
             });
         } catch (IOException ignored) {}
