@@ -93,6 +93,22 @@ class PemTlsMaterialWriterTests {
         assertThat(Files.readString(backupPath)).isEqualTo(originalFullchain);
     }
 
+    @Test
+    void writesEncryptedPrivateKeyWhenPasswordIsProvided(@TempDir Path tempDir) throws Exception {
+        PemTlsMaterial material = generateAndImport(tempDir, "source", "service.local");
+        Path targetDir = tempDir.resolve("target");
+        char[] outputPassword = "output-password".toCharArray();
+
+        writer.writeAtomically(material, toPaths(targetDir), outputPassword, false);
+
+        String privateKeyPem = Files.readString(targetDir.resolve("private-key.pem"));
+        assertThat(privateKeyPem).contains("BEGIN ENCRYPTED PRIVATE KEY");
+
+        PemTlsMaterial reloaded = importer.importFrom(targetDir, null, outputPassword);
+        assertThat(reloaded.leafCertificate().getSubjectX500Principal())
+                .isEqualTo(material.leafCertificate().getSubjectX500Principal());
+    }
+
     // -------------------------------------------------------------------------
     // failure cases
     // -------------------------------------------------------------------------

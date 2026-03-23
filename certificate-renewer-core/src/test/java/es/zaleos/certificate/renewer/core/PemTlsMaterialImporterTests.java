@@ -97,6 +97,66 @@ class PemTlsMaterialImporterTests {
         assertThat(material.privateKey()).isNotNull();
     }
 
+    @Test
+    void importFromSinglePemBundleFile_returnsValidMaterial(@TempDir Path tempDir) throws Exception {
+        Path sourceDir = tempDir.resolve("source");
+        generator.generate(sourceDir, new char[0], "service.local", true);
+
+        Path bundleDir = tempDir.resolve("bundle");
+        Files.createDirectories(bundleDir);
+        String bundleContents = Files.readString(sourceDir.resolve("fullchain.pem"))
+                + System.lineSeparator()
+                + Files.readString(sourceDir.resolve("private-key.pem"));
+        Files.writeString(bundleDir.resolve("bundle.pem"), bundleContents);
+
+        PemTlsMaterial material = importer.importFrom(bundleDir, null, new char[0]);
+
+        assertThat(material.leafCertificate()).isNotNull();
+        assertThat(material.privateKey()).isNotNull();
+        assertThat(material.orderedChain()).isNotEmpty();
+    }
+
+    @Test
+    void importFromDerCertificateWithExternalKey_returnsValidMaterial(@TempDir Path tempDir) throws Exception {
+        Path sourceDir = tempDir.resolve("source");
+        generator.generate(sourceDir, new char[0], "service.local", true);
+        PemTlsMaterial generated = importer.importFrom(sourceDir, null, new char[0]);
+
+        Path derDir = tempDir.resolve("der");
+        Files.createDirectories(derDir);
+        Files.write(derDir.resolve("certificate.der"), generated.leafCertificate().getEncoded());
+
+        Path externalKey = tempDir.resolve("private-key.pem");
+        Files.copy(sourceDir.resolve("private-key.pem"), externalKey);
+
+        PemTlsMaterial material = importer.importFrom(derDir, externalKey, new char[0]);
+
+        assertThat(material.leafCertificate().getSubjectX500Principal())
+                .isEqualTo(generated.leafCertificate().getSubjectX500Principal());
+        assertThat(material.privateKey()).isNotNull();
+        assertThat(material.orderedChain()).hasSize(1);
+    }
+
+    @Test
+    void importFromCertificateDirectoryWithExternalPrivateKey_returnsValidMaterial(@TempDir Path tempDir) throws Exception {
+        Path sourceDir = tempDir.resolve("source");
+        generator.generate(sourceDir, new char[0], "service.local", true);
+        PemTlsMaterial generated = importer.importFrom(sourceDir, null, new char[0]);
+
+        Path certificateOnlyDir = tempDir.resolve("certificate-only");
+        Files.createDirectories(certificateOnlyDir);
+        Files.copy(sourceDir.resolve("fullchain.pem"), certificateOnlyDir.resolve("fullchain.pem"));
+
+        Path externalKey = tempDir.resolve("external-private-key.pem");
+        Files.copy(sourceDir.resolve("private-key.pem"), externalKey);
+
+        PemTlsMaterial material = importer.importFrom(certificateOnlyDir, externalKey, new char[0]);
+
+        assertThat(material.leafCertificate().getSubjectX500Principal())
+                .isEqualTo(generated.leafCertificate().getSubjectX500Principal());
+        assertThat(material.privateKey()).isNotNull();
+    }
+
     // -------------------------------------------------------------------------
     // security: path traversal rejection
     // -------------------------------------------------------------------------

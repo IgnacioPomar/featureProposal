@@ -3,12 +3,34 @@ package es.zaleos.certificate.renewer.core;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.math.BigInteger;
 import java.nio.file.Path;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.BasicConstraints;
+import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
+import org.bouncycastle.asn1.x509.KeyUsage;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import javax.security.auth.x500.X500Principal;
 
 class PemTlsMaterialValidatorTests {
+
+    private static final String BC = "BC";
 
     private final InstallationTlsMaterialGenerator generator = new InstallationTlsMaterialGenerator();
     private final PemTlsCurrentMaterialLoader loader = new PemTlsCurrentMaterialLoader();
@@ -113,6 +135,83 @@ class PemTlsMaterialValidatorTests {
         assertThatThrownBy(() -> validator.validate(candidate, current, policy))
                 .isInstanceOf(PemTlsValidationException.class)
                 .hasMessageContaining("same-subject");
+    }
+
+    // -------------------------------------------------------------------------
+    // same-san
+    // -------------------------------------------------------------------------
+
+    @Test
+    void failsWhenSameSanIsRequiredAndCandidateHasDifferentSanSet() throws Exception {
+        TestCertificate current = selfSignedLeaf("service.example.com", List.of("service.example.com", "api.example.com"));
+        TestCertificate candidate = selfSignedLeaf("service.example.com", List.of("service.example.com", "admin.example.com"));
+
+        PemTlsValidationPolicy policy = new PemTlsValidationPolicy(
+                false, false, false, true, false, null, null, null);
+
+        assertThatThrownBy(() -> validator.validate(current.material(), candidate.material(), policy))
+                .isInstanceOf(PemTlsValidationException.class)
+                .hasMessageContaining("same-san");
+    }
+
+    @Test
+    void passesWhenSameSanContainsSameEntriesInDifferentOrder() throws Exception {
+        TestCertificate current = selfSignedLeaf("service.example.com", List.of("service.example.com", "api.example.com"));
+        TestCertificate candidate = selfSignedLeaf("service.example.com", List.of("api.example.com", "service.example.com"));
+
+        PemTlsValidationPolicy policy = new PemTlsValidationPolicy(
+                false, false, false, true, false, null, null, null);
+
+        assertThatCode(() -> validator.validate(current.material(), candidate.material(), policy))
+                .doesNotThrowAnyException();
+    }
+
+    // -------------------------------------------------------------------------
+    // same-chain
+    // -------------------------------------------------------------------------
+
+    @Test
+    void failsWhenSameChainIsRequiredAndIntermediateChainDiffers() throws Exception {
+        TestCertificate root = selfSignedCa("shared-root.local");
+        TestCertificate currentIntermediate = issuedCertificate(
+                "current-intermediate.local",
+                root.certificate(),
+                root.privateKey(),
+                true,
+                List.of()
+        );
+        TestCertificate candidateIntermediate = issuedCertificate(
+                "candidate-intermediate.local",
+                root.certificate(),
+                root.privateKey(),
+                true,
+                List.of()
+        );
+        TestCertificate currentLeaf = issuedCertificate(
+                "service.example.com",
+                currentIntermediate.certificate(),
+                currentIntermediate.privateKey(),
+                false,
+                List.of("service.example.com")
+        );
+        TestCertificate candidateLeaf = issuedCertificate(
+                "service.example.com",
+                candidateIntermediate.certificate(),
+                candidateIntermediate.privateKey(),
+                false,
+                List.of("service.example.com")
+        );
+
+        PemTlsValidationPolicy policy = new PemTlsValidationPolicy(
+                false, true, false, false, false, null, null, null);
+
+        assertThatThrownBy(() -> validator.validate(
+                candidateLeaf.withChain(candidateIntermediate.certificate(), root.certificate()),
+                currentLeaf.withChain(currentIntermediate.certificate(), root.certificate()),
+                policy
+        ))
+                .isInstanceOf(PemTlsValidationException.class)
+                .hasMessageContaining("same-chain");
     }
 
     // -------------------------------------------------------------------------
@@ -277,5 +376,103 @@ class PemTlsMaterialValidatorTests {
                 dir.resolve("fullchain.pem"),
                 dir.resolve("private-key.pem")
         );
+    }
+
+    private TestCertificate selfSignedLeaf(String commonName, List<String> sans) throws Exception {
+        KeyPair keyPair = generateRsaKeyPair();
+        X509Certificate certificate = buildCertificate(commonName, keyPair, null, keyPair.getPrivate(), false, sans);
+        return new TestCertificate(certificate, keyPair.getPrivate());
+    }
+
+    private TestCertificate selfSignedCa(String commonName) throws Exception {
+        KeyPair keyPair = generateRsaKeyPair();
+        X509Certificate certificate = buildCertificate(commonName, keyPair, null, keyPair.getPrivate(), true, List.of());
+        return new TestCertificate(certificate, keyPair.getPrivate());
+    }
+
+    private TestCertificate issuedCertificate(
+            String commonName,
+            X509Certificate issuerCertificate,
+            PrivateKey issuerPrivateKey,
+            boolean ca,
+            List<String> sans
+    ) throws Exception {
+        KeyPair keyPair = generateRsaKeyPair();
+        X509Certificate certificate = buildCertificate(
+                commonName,
+                keyPair,
+                issuerCertificate,
+                issuerPrivateKey,
+                ca,
+                sans
+        );
+        return new TestCertificate(certificate, keyPair.getPrivate());
+    }
+
+    private KeyPair generateRsaKeyPair() throws Exception {
+        BouncyCastleRegistrar.ensureRegistered();
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+        keyPairGenerator.initialize(2048);
+        return keyPairGenerator.generateKeyPair();
+    }
+
+    private X509Certificate buildCertificate(
+            String commonName,
+            KeyPair subjectKeyPair,
+            X509Certificate issuerCertificate,
+            PrivateKey issuerPrivateKey,
+            boolean ca,
+            List<String> sans
+    ) throws Exception {
+        BouncyCastleRegistrar.ensureRegistered();
+
+        X500Principal subject = new X500Principal("CN=" + commonName);
+        X500Principal issuer = issuerCertificate != null
+                ? issuerCertificate.getSubjectX500Principal()
+                : subject;
+
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        X509v3CertificateBuilder builder = new JcaX509v3CertificateBuilder(
+                issuer,
+                new BigInteger(64, new SecureRandom()),
+                java.util.Date.from(now.minusSeconds(60)),
+                java.util.Date.from(now.plus(365, ChronoUnit.DAYS)),
+                subject,
+                subjectKeyPair.getPublic()
+        );
+
+        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(ca));
+        int keyUsage = ca
+                ? KeyUsage.keyCertSign | KeyUsage.cRLSign
+                : KeyUsage.digitalSignature | KeyUsage.keyEncipherment;
+        builder.addExtension(Extension.keyUsage, true, new KeyUsage(keyUsage));
+        if (!sans.isEmpty()) {
+            GeneralName[] generalNames = sans.stream()
+                    .map(name -> new GeneralName(GeneralName.dNSName, name))
+                    .toArray(GeneralName[]::new);
+            builder.addExtension(Extension.subjectAlternativeName, false, new GeneralNames(generalNames));
+        }
+
+        ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
+                .setProvider(BC)
+                .build(issuerPrivateKey);
+
+        return new JcaX509CertificateConverter()
+                .setProvider(BC)
+                .getCertificate(builder.build(signer));
+    }
+
+    private record TestCertificate(X509Certificate certificate, PrivateKey privateKey) {
+
+        private PemTlsMaterial material() {
+            return new PemTlsMaterial(Path.of("in-memory.pem"), certificate, privateKey, List.of(certificate));
+        }
+
+        private PemTlsMaterial withChain(X509Certificate... additionalChainCertificates) {
+            List<X509Certificate> orderedChain = new java.util.ArrayList<>();
+            orderedChain.add(certificate);
+            orderedChain.addAll(List.of(additionalChainCertificates));
+            return new PemTlsMaterial(Path.of("in-memory.pem"), certificate, privateKey, orderedChain);
+        }
     }
 }
