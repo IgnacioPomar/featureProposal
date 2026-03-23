@@ -65,7 +65,9 @@ public class PemTlsMaterialWriter {
             restoreBackups(backupFiles, stagedFiles.keySet());
             throw exception;
         } finally {
-            cleanupBackups(backupFiles);
+            // Staging directory is always cleaned up. Backup (.bak) files are intentionally
+            // retained on success so the rollback endpoint can restore the previous material.
+            // On failure, restoreBackups() has already moved them back to their original paths.
             deleteDirectoryQuietly(stagingDirectory);
         }
     }
@@ -171,16 +173,6 @@ public class PemTlsMaterialWriter {
         for (Map.Entry<Path, Path> backupEntry : backupFiles.entrySet()) {
             try {
                 moveWithAtomicFallback(backupEntry.getValue(), backupEntry.getKey());
-            } catch (IOException ignored) {
-            }
-        }
-    }
-
-    private void cleanupBackups(Map<Path, Path> backupFiles) {
-        List<Path> backupPaths = new ArrayList<>(backupFiles.values());
-        for (Path backupPath : backupPaths) {
-            try {
-                Files.deleteIfExists(backupPath);
             } catch (IOException ignored) {
             }
         }

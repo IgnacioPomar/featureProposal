@@ -274,7 +274,10 @@ public class PemTlsMaterialImporter {
                 }
                 if (object instanceof PKCS8EncryptedPrivateKeyInfo encryptedPrivateKeyInfo) {
                     validatePrivateKeyPassword(password, keyPath);
-                    InputDecryptorProvider provider = new JcePKCSPBEInputDecryptorProviderBuilder().build(password);
+                    // BC provider required: the writer uses JceOpenSSLPKCS8EncryptorBuilder
+                    // (PKCS#8 AES-256-CBC), which the JVM default provider cannot decrypt.
+                    InputDecryptorProvider provider =
+                            new JcePKCSPBEInputDecryptorProviderBuilder().setProvider(BC).build(password);
                     PrivateKeyInfo keyInfo = encryptedPrivateKeyInfo.decryptPrivateKeyInfo(provider);
                     return converter.getPrivateKey(keyInfo);
                 }
