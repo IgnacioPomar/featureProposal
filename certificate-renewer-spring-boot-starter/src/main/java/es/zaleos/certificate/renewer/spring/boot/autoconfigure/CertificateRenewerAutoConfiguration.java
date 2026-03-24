@@ -72,11 +72,12 @@ public class CertificateRenewerAutoConfiguration {
             TargetPathsResolver targetResolver,
             ValidationPolicyResolver policyResolver,
             CertificateRenewerProperties properties,
+            Environment environment,
             ApplicationEventPublisher eventPublisher,
             ObjectProvider<SslBundleRegistry> sslBundleRegistryProvider
     ) {
         return new TlsMaterialService(
-                coreService, targetResolver, policyResolver, properties, eventPublisher,
+                coreService, targetResolver, policyResolver, properties, environment, eventPublisher,
                 sslBundleRegistryProvider.getIfAvailable());
     }
 

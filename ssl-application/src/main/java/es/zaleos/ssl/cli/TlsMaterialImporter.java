@@ -88,12 +88,21 @@ public class TlsMaterialImporter {
             Path externalKeyPath,
             char[] externalMaterialPassword
     ) throws Exception {
+        return importAndActivate(sourceDirectory, externalKeyPath, externalMaterialPassword, false);
+    }
+
+    public PemActivationResult importAndActivate(
+            Path sourceDirectory,
+            Path externalKeyPath,
+            char[] externalMaterialPassword,
+            boolean immediateReload
+    ) throws Exception {
         return operationService.importAndActivate(
                 "web-server",
                 sourceDirectory,
                 externalKeyPath,
                 externalMaterialPassword,
-                false
+                immediateReload
         );
     }
 

@@ -12,8 +12,15 @@ import java.nio.file.StandardCopyOption;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.boot.autoconfigure.ssl.PemSslBundleProperties;
+import org.springframework.boot.autoconfigure.ssl.PropertiesSslBundle;
+import org.springframework.boot.ssl.SslBundle;
 import org.springframework.boot.ssl.SslBundleRegistry;
+import org.springframework.boot.ssl.SslBundles;
+import org.springframework.boot.ssl.SslOptions;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.core.env.Environment;
+import org.springframework.util.StringUtils;
 
 /**
  * Spring-layer facade over {@link PemTlsImportAndActivateService}.
@@ -33,6 +40,7 @@ public class TlsMaterialService {
     private final TargetPathsResolver targetResolver;
     private final ValidationPolicyResolver policyResolver;
     private final CertificateRenewerProperties properties;
+    private final Environment environment;
     private final ApplicationEventPublisher eventPublisher;
     private final SslBundleRegistry sslBundleRegistry; // nullable — injected as optional
     private final ReentrantLock importLock = new ReentrantLock();
@@ -42,6 +50,7 @@ public class TlsMaterialService {
             TargetPathsResolver targetResolver,
             ValidationPolicyResolver policyResolver,
             CertificateRenewerProperties properties,
+            Environment environment,
             ApplicationEventPublisher eventPublisher,
             SslBundleRegistry sslBundleRegistry
     ) {
@@ -49,6 +58,7 @@ public class TlsMaterialService {
         this.targetResolver = targetResolver;
         this.policyResolver = policyResolver;
         this.properties = properties;
+        this.environment = environment;
         this.eventPublisher = eventPublisher;
         this.sslBundleRegistry = sslBundleRegistry;
     }
@@ -103,6 +113,15 @@ public class TlsMaterialService {
      * Restores the previous material from {@code .bak} files for the given target.
      */
     public void rollback(String targetName) throws Exception {
+        rollback(targetName, false);
+    }
+
+    /**
+     * Restores the previous material from {@code .bak} files for the given target.
+     *
+     * @param immediateReload when {@code true}, reloads the active Spring SSL bundle before returning
+     */
+    public void rollback(String targetName, boolean immediateReload) throws Exception {
         if (!importLock.tryLock()) {
             throw new IllegalStateException(
                     "An import operation is in progress. Cannot rollback while an import is running.");
@@ -121,6 +140,9 @@ public class TlsMaterialService {
             if (!restored) {
                 throw new IllegalStateException("No backup files found for target '" + targetName + "'.");
             }
+            if (immediateReload && sslBundleRegistry != null && "web-server".equals(targetName)) {
+                reloadSslBundle(targetPaths);
+            }
             eventPublisher.publishEvent(new TlsMaterialActivatedEvent(this, targetName, null));
         } finally {
             importLock.unlock();
@@ -128,10 +150,76 @@ public class TlsMaterialService {
     }
 
     private void reloadSslBundle(PemTlsTargetPaths targetPaths) {
-        // TODO Phase 1: construct PemSslBundle from targetPaths and call sslBundleRegistry.updateBundle("server", bundle)
-        // for immediate synchronous reload. Pending investigation of the Spring Boot 4 PemSslBundle API.
-        // The Spring Boot file watcher (reload-on-update: true) handles the actual reload within ~10s.
-        LOG.info("TLS material written for web-server target. Spring Boot file watcher will reload the SSL bundle.");
+        if (!(this.sslBundleRegistry instanceof SslBundles sslBundles)) {
+            throw new IllegalStateException("Immediate SSL reload requires an SslBundleRegistry that also exposes SslBundles");
+        }
+
+        String bundleName = this.environment.getProperty("server.ssl.bundle");
+        if (!StringUtils.hasText(bundleName)) {
+            throw new IllegalStateException("Immediate SSL reload requires server.ssl.bundle to be configured");
+        }
+        if (targetPaths.fullChainPath() == null || targetPaths.privateKeyPath() == null) {
+            throw new IllegalStateException("Immediate SSL reload requires both fullchain and private key paths");
+        }
+
+        SslBundle currentBundle = sslBundles.getBundle(bundleName);
+        LOG.info("Requesting immediate SSL bundle reload for target 'web-server' using bundle '" + bundleName + "'.");
+        PemSslBundleProperties bundleProperties = createUpdatedPemBundleProperties(bundleName, currentBundle, targetPaths);
+        SslBundle updatedBundle = PropertiesSslBundle.get(bundleProperties);
+        this.sslBundleRegistry.updateBundle(bundleName, updatedBundle);
+    }
+
+    private PemSslBundleProperties createUpdatedPemBundleProperties(
+            String bundleName,
+            SslBundle currentBundle,
+            PemTlsTargetPaths targetPaths
+    ) {
+        PemSslBundleProperties bundleProperties = new PemSslBundleProperties();
+        bundleProperties.setProtocol(currentBundle.getProtocol());
+        bundleProperties.getOptions().setCiphers(SslOptions.asSet(currentBundle.getOptions().getCiphers()));
+        bundleProperties.getOptions().setEnabledProtocols(
+                SslOptions.asSet(currentBundle.getOptions().getEnabledProtocols()));
+        bundleProperties.getKey().setAlias(currentBundle.getKey().getAlias());
+        bundleProperties.getKey().setPassword(currentBundle.getKey().getPassword());
+
+        String prefix = "spring.ssl.bundle.pem." + bundleName + ".";
+        bundleProperties.getKeystore().setType(this.environment.getProperty(prefix + "keystore.type"));
+        bundleProperties.getKeystore().setCertificate(asFileLocation(targetPaths.fullChainPath()));
+        bundleProperties.getKeystore().setPrivateKey(asFileLocation(targetPaths.privateKeyPath()));
+        bundleProperties.getKeystore().setPrivateKeyPassword(resolvePrivateKeyPassword(prefix));
+        setVerifyKeysIfConfigured(bundleProperties.getKeystore(), prefix + "keystore.verify-keys");
+
+        copyStoreIfConfigured(bundleProperties.getTruststore(), prefix + "truststore.");
+        return bundleProperties;
+    }
+
+    private void copyStoreIfConfigured(PemSslBundleProperties.Store store, String prefix) {
+        store.setType(this.environment.getProperty(prefix + "type"));
+        store.setCertificate(this.environment.getProperty(prefix + "certificate"));
+        store.setPrivateKey(this.environment.getProperty(prefix + "private-key"));
+        store.setPrivateKeyPassword(this.environment.getProperty(prefix + "private-key-password"));
+        setVerifyKeysIfConfigured(store, prefix + "verify-keys");
+    }
+
+    private void setVerifyKeysIfConfigured(PemSslBundleProperties.Store store, String propertyName) {
+        String verifyKeys = this.environment.getProperty(propertyName);
+        if (StringUtils.hasText(verifyKeys)) {
+            store.setVerifyKeys(Boolean.parseBoolean(verifyKeys));
+        }
+    }
+
+    private String resolvePrivateKeyPassword(String prefix) {
+        String bundlePrivateKeyPassword = this.environment.getProperty(prefix + "keystore.private-key-password");
+        if (StringUtils.hasText(bundlePrivateKeyPassword)) {
+            return bundlePrivateKeyPassword;
+        }
+        return StringUtils.hasText(this.properties.getOutput().getPrivateKeyPassword())
+                ? this.properties.getOutput().getPrivateKeyPassword()
+                : null;
+    }
+
+    private String asFileLocation(Path path) {
+        return path.toAbsolutePath().toUri().toString();
     }
 
     private char[] resolveOutputPassword() {

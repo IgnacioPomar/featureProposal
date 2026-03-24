@@ -145,7 +145,7 @@ public class TlsMaterialMaintenanceController {
         authenticate(authorizationHeader);
 
         try {
-            operationService.rollback("web-server");
+            operationService.rollback("web-server", true);
             return ResponseEntity.ok(Map.of("status", "rolled back"));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));

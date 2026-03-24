@@ -180,9 +180,11 @@ Spring Boot 3.1+ monitors the PEM files referenced in `spring.ssl.bundle.pem.*`.
 
 **Programmatic reload** (`SslBundleRegistry.updateBundle()`)
 
-The import API endpoint, after writing validated material to disk, shall call `SslBundleRegistry.updateBundle("server", newBundle)` directly. This provides an **immediate, synchronous** reload: the API response confirms that the new certificate is active before returning. This path applies only when the import is triggered via the REST API.
+The REST maintenance endpoints that replace or roll back the active HTTPS material shall call `SslBundleRegistry.updateBundle("server", newBundle)` directly after the files are written. This provides an **immediate, synchronous** reload: the API response confirms that the new certificate is active before returning.
 
 Both mechanisms coexist: CLI and crontab-triggered imports rely on the file watcher; API-triggered imports use the programmatic reload for immediate confirmation.
+
+When immediate reload is used, the server-side TLS configuration changes at once, but existing client connections can remain attached to the previous TLS session. Certificate verification after an update shall therefore use a fresh TLS connection, for example a different browser, a private window, or a new CLI TLS client process.
 
 ### 7.2 Non-HTTPS hot-reload (JWT/JWS)
 
