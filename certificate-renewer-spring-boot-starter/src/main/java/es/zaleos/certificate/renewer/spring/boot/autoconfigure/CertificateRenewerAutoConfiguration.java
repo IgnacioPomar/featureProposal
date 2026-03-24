@@ -4,7 +4,7 @@ import es.zaleos.certificate.renewer.core.InstallationTlsMaterialGenerator;
 import es.zaleos.certificate.renewer.core.PemTlsCurrentMaterialLoader;
 import es.zaleos.certificate.renewer.core.PemTlsImportAndActivateService;
 import es.zaleos.certificate.renewer.spring.boot.bootstrap.InstallationTlsMaterialBootstrapper;
-import es.zaleos.certificate.renewer.spring.boot.maintenance.TlsMaterialMaintenanceController;
+import es.zaleos.certificate.renewer.spring.boot.rest.TlsMaterialMaintenanceController;
 import es.zaleos.certificate.renewer.spring.boot.runtime.TargetPathsResolver;
 import es.zaleos.certificate.renewer.spring.boot.runtime.TlsMaterialService;
 import es.zaleos.certificate.renewer.spring.boot.runtime.ValidationPolicyResolver;

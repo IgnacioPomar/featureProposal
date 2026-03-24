@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.maintenance;
+package es.zaleos.certificate.renewer.spring.boot.rest;
 
 import es.zaleos.certificate.renewer.core.PemActivationResult;
 import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
