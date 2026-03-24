@@ -79,14 +79,6 @@ public class PemTlsMaterialWriter {
             Map<Path, Path> stagedFiles,
             Path stagingDirectory
     ) throws Exception {
-        if (targetPaths.certificatePath() != null) {
-            stagedFiles.put(targetPaths.certificatePath(),
-                    writeCertificateFile(stagingDirectory.resolve("certificate.pem"), List.of(material.leafCertificate())));
-        }
-        if (targetPaths.chainPath() != null) {
-            stagedFiles.put(targetPaths.chainPath(),
-                    writeCertificateFile(stagingDirectory.resolve("chain.pem"), chainOnly(material.orderedChain())));
-        }
         if (targetPaths.fullChainPath() != null) {
             stagedFiles.put(targetPaths.fullChainPath(),
                     writeCertificateFile(stagingDirectory.resolve("fullchain.pem"), material.orderedChain()));
