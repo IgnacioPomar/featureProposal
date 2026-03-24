@@ -3,6 +3,13 @@ package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
 import es.zaleos.certificate.renewer.core.InstallationTlsMaterialGenerator;
 import es.zaleos.certificate.renewer.core.PemTlsCurrentMaterialLoader;
 import es.zaleos.certificate.renewer.core.PemTlsImportAndActivateService;
+import es.zaleos.certificate.renewer.spring.boot.bootstrap.InstallationTlsMaterialBootstrapper;
+import es.zaleos.certificate.renewer.spring.boot.maintenance.TlsMaterialMaintenanceController;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TargetPathsResolver;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TlsMaterialService;
+import es.zaleos.certificate.renewer.spring.boot.runtime.ValidationPolicyResolver;
+import es.zaleos.certificate.renewer.spring.boot.security.InstalledTlsMaterialJwsVerifier;
+import es.zaleos.certificate.renewer.spring.boot.security.TlsMaterialJwsVerifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -20,8 +27,8 @@ import org.springframework.core.env.Environment;
 @AutoConfiguration
 @ConditionalOnClass(PemTlsImportAndActivateService.class)
 @ConditionalOnProperty(prefix = "zaleos.certificate", name = "enabled", havingValue = "true", matchIfMissing = true)
-@EnableConfigurationProperties(ZaleosCertificateProperties.class)
-public class ZaleosCertificateAutoConfiguration {
+@EnableConfigurationProperties(CertificateRenewerProperties.class)
+public class CertificateRenewerAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
@@ -37,19 +44,19 @@ public class ZaleosCertificateAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ZaleosCertificateTargetResolver zaleosCertificateTargetResolver(
+    public TargetPathsResolver zaleosCertificateTargetResolver(
             Environment environment,
-            ZaleosCertificateProperties properties
+            CertificateRenewerProperties properties
     ) {
-        return new ZaleosCertificateTargetResolver(environment, properties);
+        return new TargetPathsResolver(environment, properties);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ZaleosCertificatePolicyResolver zaleosCertificatePolicyResolver(
-            ZaleosCertificateProperties properties
+    public ValidationPolicyResolver zaleosCertificatePolicyResolver(
+            CertificateRenewerProperties properties
     ) {
-        return new ZaleosCertificatePolicyResolver(properties);
+        return new ValidationPolicyResolver(properties);
     }
 
     @Bean
@@ -60,48 +67,48 @@ public class ZaleosCertificateAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public ZaleosCertificateOperationService zaleosCertificateOperationService(
+    public TlsMaterialService zaleosCertificateOperationService(
             PemTlsImportAndActivateService coreService,
-            ZaleosCertificateTargetResolver targetResolver,
-            ZaleosCertificatePolicyResolver policyResolver,
-            ZaleosCertificateProperties properties,
+            TargetPathsResolver targetResolver,
+            ValidationPolicyResolver policyResolver,
+            CertificateRenewerProperties properties,
             ApplicationEventPublisher eventPublisher,
             ObjectProvider<SslBundleRegistry> sslBundleRegistryProvider
     ) {
-        return new ZaleosCertificateOperationService(
+        return new TlsMaterialService(
                 coreService, targetResolver, policyResolver, properties, eventPublisher,
                 sslBundleRegistryProvider.getIfAvailable());
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ZaleosCertificateBootstrapInitializer zaleosCertificateBootstrapInitializer(
+    public InstallationTlsMaterialBootstrapper zaleosCertificateBootstrapInitializer(
             Environment environment,
-            ZaleosCertificateProperties properties,
-            ZaleosCertificateTargetResolver targetResolver,
+            CertificateRenewerProperties properties,
+            TargetPathsResolver targetResolver,
             InstallationTlsMaterialGenerator generator
     ) {
-        return new ZaleosCertificateBootstrapInitializer(environment, properties, targetResolver, generator);
+        return new InstallationTlsMaterialBootstrapper(environment, properties, targetResolver, generator);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public ZaleosCertificateJwsVerifier zaleosCertificateJwsVerifier(
-            ZaleosCertificateTargetResolver targetResolver,
-            ZaleosCertificateProperties properties,
+    public TlsMaterialJwsVerifier zaleosCertificateJwsVerifier(
+            TargetPathsResolver targetResolver,
+            CertificateRenewerProperties properties,
             PemTlsCurrentMaterialLoader materialLoader
     ) {
-        return new DefaultZaleosCertificateJwsVerifier(targetResolver, properties, materialLoader);
+        return new InstalledTlsMaterialJwsVerifier(targetResolver, properties, materialLoader);
     }
 
     @Bean
     @ConditionalOnProperty(prefix = "zaleos.certificate.maintenance", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
-    public ZaleosCertificateMaintenanceController zaleosCertificateMaintenanceController(
-            ZaleosCertificateOperationService operationService,
-            ZaleosCertificateJwsVerifier jwsVerifier,
-            ZaleosCertificateProperties properties
+    public TlsMaterialMaintenanceController zaleosCertificateMaintenanceController(
+            TlsMaterialService operationService,
+            TlsMaterialJwsVerifier jwsVerifier,
+            CertificateRenewerProperties properties
     ) {
-        return new ZaleosCertificateMaintenanceController(operationService, jwsVerifier, properties);
+        return new TlsMaterialMaintenanceController(operationService, jwsVerifier, properties);
     }
 }

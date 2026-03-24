@@ -1,10 +1,11 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.bootstrap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import es.zaleos.certificate.renewer.core.InstallationTlsMaterialGenerator;
 import es.zaleos.certificate.renewer.core.PemTlsMaterial;
 import es.zaleos.certificate.renewer.core.PemTlsMaterialImporter;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerAutoConfiguration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -12,12 +13,12 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-class ZaleosCertificateBootstrapInitializerTests {
+class InstallationTlsMaterialBootstrapperTests {
 
     private final InstallationTlsMaterialGenerator generator = new InstallationTlsMaterialGenerator();
     private final PemTlsMaterialImporter importer = new PemTlsMaterialImporter();
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(ZaleosCertificateAutoConfiguration.class));
+            .withConfiguration(AutoConfigurations.of(CertificateRenewerAutoConfiguration.class));
 
     @Test
     void createsInstallationMaterialWhenWebServerPemFilesAreMissing(@TempDir Path tempDir) {

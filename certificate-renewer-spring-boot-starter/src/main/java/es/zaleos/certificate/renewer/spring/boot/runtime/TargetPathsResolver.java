@@ -1,6 +1,7 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.runtime;
 
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
 import java.nio.file.Path;
 import org.springframework.core.env.Environment;
 import org.springframework.util.StringUtils;
@@ -8,12 +9,12 @@ import org.springframework.util.StringUtils;
 /**
  * Resolves PEM target paths from explicit target configuration or Spring SSL defaults.
  */
-public class ZaleosCertificateTargetResolver {
+public class TargetPathsResolver {
 
     private final Environment environment;
-    private final ZaleosCertificateProperties properties;
+    private final CertificateRenewerProperties properties;
 
-    public ZaleosCertificateTargetResolver(Environment environment, ZaleosCertificateProperties properties) {
+    public TargetPathsResolver(Environment environment, CertificateRenewerProperties properties) {
         this.environment = environment;
         this.properties = properties;
     }
@@ -54,7 +55,7 @@ public class ZaleosCertificateTargetResolver {
             }
         }
 
-        ZaleosCertificateProperties.Target webServer = properties.getTargets().get("web-server");
+        CertificateRenewerProperties.Target webServer = properties.getTargets().get("web-server");
         if (webServer != null) {
             return fromTarget(webServer);
         }
@@ -68,7 +69,7 @@ public class ZaleosCertificateTargetResolver {
         );
     }
 
-    private PemTlsTargetPaths fromTarget(ZaleosCertificateProperties.Target target) {
+    private PemTlsTargetPaths fromTarget(CertificateRenewerProperties.Target target) {
         if (StringUtils.hasText(target.getOutputDir())) {
             Path outputDir = Path.of(target.getOutputDir());
             return new PemTlsTargetPaths(

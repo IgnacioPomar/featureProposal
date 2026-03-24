@@ -1,9 +1,11 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.runtime;
 
 import es.zaleos.certificate.renewer.core.PemActivationResult;
 import es.zaleos.certificate.renewer.core.PemTlsImportAndActivateService;
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
 import es.zaleos.certificate.renewer.core.PemTlsValidationPolicy;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
+import es.zaleos.certificate.renewer.spring.boot.event.TlsMaterialActivatedEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -23,23 +25,23 @@ import org.springframework.context.ApplicationEventPublisher;
  *   <li>{@link TlsMaterialActivatedEvent} publishing after every successful activation.</li>
  * </ul>
  */
-public class ZaleosCertificateOperationService {
+public class TlsMaterialService {
 
-    private static final Log LOG = LogFactory.getLog(ZaleosCertificateOperationService.class);
+    private static final Log LOG = LogFactory.getLog(TlsMaterialService.class);
 
     private final PemTlsImportAndActivateService coreService;
-    private final ZaleosCertificateTargetResolver targetResolver;
-    private final ZaleosCertificatePolicyResolver policyResolver;
-    private final ZaleosCertificateProperties properties;
+    private final TargetPathsResolver targetResolver;
+    private final ValidationPolicyResolver policyResolver;
+    private final CertificateRenewerProperties properties;
     private final ApplicationEventPublisher eventPublisher;
     private final SslBundleRegistry sslBundleRegistry; // nullable — injected as optional
     private final ReentrantLock importLock = new ReentrantLock();
 
-    public ZaleosCertificateOperationService(
+    public TlsMaterialService(
             PemTlsImportAndActivateService coreService,
-            ZaleosCertificateTargetResolver targetResolver,
-            ZaleosCertificatePolicyResolver policyResolver,
-            ZaleosCertificateProperties properties,
+            TargetPathsResolver targetResolver,
+            ValidationPolicyResolver policyResolver,
+            CertificateRenewerProperties properties,
             ApplicationEventPublisher eventPublisher,
             SslBundleRegistry sslBundleRegistry
     ) {

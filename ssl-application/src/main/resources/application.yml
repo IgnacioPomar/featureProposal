@@ -15,8 +15,8 @@ spring:
         server:
           reload-on-update: true
           keystore:
-            certificate: file:./target/classes/ssl/fullchain.pem
-            private-key: file:./target/classes/ssl/private-key.pem
+            certificate: file:./target/ssl/fullchain.pem
+            private-key: file:./target/ssl/private-key.pem
             private-key-password: ${APP_TLS_PRIVATE_KEY_PASSWORD:}
   datasource:
     url: ${APP_DATASOURCE_URL:jdbc:h2:file:./target/db/sslapp;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;AUTO_SERVER=TRUE}
@@ -41,7 +41,7 @@ app:
     version: ${APP_OPENAPI_VERSION:v1}
   tls-page:
     path: ${APP_TLS_PAGE_PATH:/certificate-renewal}
-    target-dir: ${APP_TLS_TARGET_DIR:./target/classes/ssl}
+    target-dir: ${APP_TLS_TARGET_DIR:./target/ssl}
     target-name: ${APP_TLS_TARGET_NAME:web-server}
 
 zaleos:
@@ -52,7 +52,7 @@ zaleos:
     targets:
       web-server:
         type: filesystem
-        output-dir: ./target/classes/ssl
+        output-dir: ./target/ssl
         activate: true
 
 springdoc:

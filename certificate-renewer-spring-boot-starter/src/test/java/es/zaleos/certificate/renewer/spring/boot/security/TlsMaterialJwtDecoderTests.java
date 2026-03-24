@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -9,11 +9,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
 
-class ZaleosCertificateJwtDecoderTests {
+class TlsMaterialJwtDecoderTests {
 
     @Test
     void decodeReturnsJwtWithStandardTimeClaims() {
-        ZaleosCertificateJwsVerifier verifier = new ZaleosCertificateJwsVerifier() {
+        TlsMaterialJwsVerifier verifier = new TlsMaterialJwsVerifier() {
             @Override
             public void verify(String jwsCompact) {
             }
@@ -23,7 +23,7 @@ class ZaleosCertificateJwtDecoderTests {
                 return Map.of("sub", "alice", "iat", 10L, "exp", 20L);
             }
         };
-        ZaleosCertificateJwtDecoder decoder = new ZaleosCertificateJwtDecoder(verifier);
+        TlsMaterialJwtDecoder decoder = new TlsMaterialJwtDecoder(verifier);
 
         Jwt jwt = decoder.decode("header.payload.signature");
 
@@ -34,7 +34,7 @@ class ZaleosCertificateJwtDecoderTests {
 
     @Test
     void decodeWrapsVerifierFailuresAsJwtException() {
-        ZaleosCertificateJwsVerifier verifier = new ZaleosCertificateJwsVerifier() {
+        TlsMaterialJwsVerifier verifier = new TlsMaterialJwsVerifier() {
             @Override
             public void verify(String jwsCompact) {
                 throw new JwsVerificationException("invalid signature");
@@ -45,7 +45,7 @@ class ZaleosCertificateJwtDecoderTests {
                 throw new JwsVerificationException("invalid signature");
             }
         };
-        ZaleosCertificateJwtDecoder decoder = new ZaleosCertificateJwtDecoder(verifier);
+        TlsMaterialJwtDecoder decoder = new TlsMaterialJwtDecoder(verifier);
 
         assertThatThrownBy(() -> decoder.decode("header.payload.signature"))
                 .isInstanceOf(JwtException.class)

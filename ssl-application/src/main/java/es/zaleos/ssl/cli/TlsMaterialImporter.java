@@ -1,8 +1,8 @@
 package es.zaleos.ssl.cli;
 
 import es.zaleos.certificate.renewer.core.PemActivationResult;
-import es.zaleos.certificate.renewer.spring.boot.autoconfigure.ZaleosCertificateOperationService;
-import es.zaleos.certificate.renewer.spring.boot.autoconfigure.ZaleosCertificateProperties;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TlsMaterialService;
 import java.nio.file.Path;
 import java.util.Optional;
 import org.apache.logging.log4j.LogManager;
@@ -22,13 +22,13 @@ public class TlsMaterialImporter {
     private static final String PROP_EXTERNAL_MATERIAL_PASSWORD = "tls.import.source-password";
 
     private final Environment environment;
-    private final ZaleosCertificateOperationService operationService;
-    private final ZaleosCertificateProperties properties;
+    private final TlsMaterialService operationService;
+    private final CertificateRenewerProperties properties;
 
     public TlsMaterialImporter(
             Environment environment,
-            ZaleosCertificateOperationService operationService,
-            ZaleosCertificateProperties properties
+            TlsMaterialService operationService,
+            CertificateRenewerProperties properties
     ) {
         this.environment = environment;
         this.operationService = operationService;

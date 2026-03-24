@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.event;
 
 import es.zaleos.certificate.renewer.core.PemActivationResult;
 import org.springframework.context.ApplicationEvent;

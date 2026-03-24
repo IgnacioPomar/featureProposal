@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Public configuration model for the Zaleos certificate starter.
  */
 @ConfigurationProperties("zaleos.certificate")
-public class ZaleosCertificateProperties {
+public class CertificateRenewerProperties {
 
     private boolean enabled = true;
     private final Bootstrap bootstrap = new Bootstrap();

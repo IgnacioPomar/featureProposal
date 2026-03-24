@@ -3,7 +3,7 @@ package es.zaleos.ssl.web;
 import es.zaleos.ssl.cli.TlsMaterialImporter;
 import es.zaleos.certificate.renewer.core.PemActivationResult;
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
-import es.zaleos.certificate.renewer.spring.boot.autoconfigure.ZaleosCertificateTargetResolver;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TargetPathsResolver;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,14 +33,14 @@ public class TlsMaterialPageController {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
     private final TlsMaterialImporter tlsMaterialImporter;
-    private final ZaleosCertificateTargetResolver targetResolver;
+    private final TargetPathsResolver targetResolver;
 
     @Value("${app.tls-page.target-name:web-server}")
     private String targetName;
 
     public TlsMaterialPageController(
             TlsMaterialImporter tlsMaterialImporter,
-            ZaleosCertificateTargetResolver targetResolver
+            TargetPathsResolver targetResolver
     ) {
         this.tlsMaterialImporter = tlsMaterialImporter;
         this.targetResolver = targetResolver;

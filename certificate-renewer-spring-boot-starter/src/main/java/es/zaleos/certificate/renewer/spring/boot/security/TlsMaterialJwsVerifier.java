@@ -1,5 +1,6 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.security;
 
+import es.zaleos.certificate.renewer.spring.boot.event.TlsMaterialActivatedEvent;
 import java.util.Map;
 
 /**
@@ -13,7 +14,7 @@ import java.util.Map;
  * <p>Implementations reload their internal trust material automatically on
  * {@link TlsMaterialActivatedEvent}.
  */
-public interface ZaleosCertificateJwsVerifier {
+public interface TlsMaterialJwsVerifier {
 
     /**
      * Verifies the JWS. Throws {@link JwsVerificationException} if the chain or signature is invalid.

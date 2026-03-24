@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot;
 
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
  * the technical specification are implemented.
  */
 @Disabled("Enable these tests when the remaining starter requirements from the specification are implemented.")
-class ZaleosCertificatePendingSpecificationTests {
+class PendingSpecificationTests {
 
     @Test
     void maintenanceTokensRequireExpIatJtiAndOpClaims() {

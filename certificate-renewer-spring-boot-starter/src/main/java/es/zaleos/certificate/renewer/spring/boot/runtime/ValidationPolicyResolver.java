@@ -1,6 +1,7 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.runtime;
 
 import es.zaleos.certificate.renewer.core.PemTlsValidationPolicy;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
 import java.io.InputStream;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -14,22 +15,22 @@ import org.springframework.core.io.ResourceLoader;
  * Resolves the effective validation policy for a target by merging global defaults
  * with per-target overrides and loading any referenced certificate resources.
  */
-public class ZaleosCertificatePolicyResolver {
+public class ValidationPolicyResolver {
 
-    private static final Log LOG = LogFactory.getLog(ZaleosCertificatePolicyResolver.class);
+    private static final Log LOG = LogFactory.getLog(ValidationPolicyResolver.class);
 
-    private final ZaleosCertificateProperties properties;
+    private final CertificateRenewerProperties properties;
     private final ResourceLoader resourceLoader;
 
-    public ZaleosCertificatePolicyResolver(ZaleosCertificateProperties properties) {
+    public ValidationPolicyResolver(CertificateRenewerProperties properties) {
         this.properties = properties;
         this.resourceLoader = new DefaultResourceLoader();
     }
 
     public PemTlsValidationPolicy resolve(String targetName) {
-        ZaleosCertificateProperties.Policy defaults = properties.getPolicy();
-        ZaleosCertificateProperties.Target target = properties.getTargets().get(targetName);
-        ZaleosCertificateProperties.TargetPolicy overrides = target != null ? target.getPolicy() : null;
+        CertificateRenewerProperties.Policy defaults = properties.getPolicy();
+        CertificateRenewerProperties.Target target = properties.getTargets().get(targetName);
+        CertificateRenewerProperties.TargetPolicy overrides = target != null ? target.getPolicy() : null;
 
         String expectedRootCaLocation = overrides != null && overrides.getExpectedRootCa() != null
                 ? overrides.getExpectedRootCa()

@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.security;
 
 /**
  * Thrown when a JWS token fails signature or certificate chain verification.

@@ -1,2 +1,2 @@
-es.zaleos.certificate.renewer.spring.boot.autoconfigure.ZaleosCertificateAutoConfiguration
-es.zaleos.certificate.renewer.spring.boot.autoconfigure.ZaleosCertificateSecurityAutoConfiguration
+es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerAutoConfiguration
+es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerSecurityAutoConfiguration

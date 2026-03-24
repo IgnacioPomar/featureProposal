@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -8,6 +8,9 @@ import es.zaleos.certificate.renewer.core.InstallationTlsMaterialGenerator;
 import es.zaleos.certificate.renewer.core.PemTlsCurrentMaterialLoader;
 import es.zaleos.certificate.renewer.core.PemTlsMaterial;
 import es.zaleos.certificate.renewer.core.PemTlsMaterialImporter;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
+import es.zaleos.certificate.renewer.spring.boot.event.TlsMaterialActivatedEvent;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TargetPathsResolver;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.PrivateKey;
@@ -19,7 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.env.MockEnvironment;
 
-class DefaultZaleosCertificateJwsVerifierTests {
+class InstalledTlsMaterialJwsVerifierTests {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -32,7 +35,7 @@ class DefaultZaleosCertificateJwsVerifierTests {
         generator.generate(targetDir, new char[0], "service.local", true);
         PemTlsMaterial installed = importer.importFrom(targetDir, null, new char[0]);
 
-        DefaultZaleosCertificateJwsVerifier verifier = createVerifier(targetDir, null);
+        InstalledTlsMaterialJwsVerifier verifier = createVerifier(targetDir, null);
         String token = sign(
                 installed.privateKey(),
                 Map.of("alg", "RS256"),
@@ -52,7 +55,7 @@ class DefaultZaleosCertificateJwsVerifierTests {
         generator.generate(differentDir, new char[0], "different.local", true);
         PemTlsMaterial different = importer.importFrom(differentDir, null, new char[0]);
 
-        DefaultZaleosCertificateJwsVerifier verifier = createVerifier(targetDir, null);
+        InstalledTlsMaterialJwsVerifier verifier = createVerifier(targetDir, null);
         String token = sign(
                 different.privateKey(),
                 Map.of("alg", "RS256"),
@@ -72,7 +75,7 @@ class DefaultZaleosCertificateJwsVerifierTests {
         generator.generate(anchorDir, new char[0], "pca-anchor.local", true);
         PemTlsMaterial installed = importer.importFrom(targetDir, null, new char[0]);
 
-        DefaultZaleosCertificateJwsVerifier verifier =
+        InstalledTlsMaterialJwsVerifier verifier =
                 createVerifier(targetDir, anchorDir.resolve("certificate.pem"));
         String token = sign(
                 installed.privateKey(),
@@ -92,7 +95,7 @@ class DefaultZaleosCertificateJwsVerifierTests {
         generator.generate(targetDir, new char[0], "service-a.local", true);
         PemTlsMaterial original = importer.importFrom(targetDir, null, new char[0]);
 
-        DefaultZaleosCertificateJwsVerifier verifier = createVerifier(targetDir, null);
+        InstalledTlsMaterialJwsVerifier verifier = createVerifier(targetDir, null);
         String originalToken = sign(original.privateKey(), Map.of("alg", "RS256"), Map.of("sub", "before-reload"));
         assertThat(verifier.verifyAndExtractClaims(originalToken)).containsEntry("sub", "before-reload");
 
@@ -107,18 +110,18 @@ class DefaultZaleosCertificateJwsVerifierTests {
                 .hasMessageContaining("signature");
     }
 
-    private DefaultZaleosCertificateJwsVerifier createVerifier(Path targetDir, Path expectedRootCaPath) {
-        ZaleosCertificateProperties properties = new ZaleosCertificateProperties();
-        properties.getTargets().computeIfAbsent("web-server", ignored -> new ZaleosCertificateProperties.Target())
+    private InstalledTlsMaterialJwsVerifier createVerifier(Path targetDir, Path expectedRootCaPath) {
+        CertificateRenewerProperties properties = new CertificateRenewerProperties();
+        properties.getTargets().computeIfAbsent("web-server", ignored -> new CertificateRenewerProperties.Target())
                 .setOutputDir(targetDir.toString());
         if (expectedRootCaPath != null) {
             properties.getPolicy().setExpectedRootCa("file:" + expectedRootCaPath);
         }
 
-        ZaleosCertificateTargetResolver targetResolver =
-                new ZaleosCertificateTargetResolver(new MockEnvironment(), properties);
+        TargetPathsResolver targetResolver =
+                new TargetPathsResolver(new MockEnvironment(), properties);
 
-        return new DefaultZaleosCertificateJwsVerifier(
+        return new InstalledTlsMaterialJwsVerifier(
                 targetResolver,
                 properties,
                 new PemTlsCurrentMaterialLoader()

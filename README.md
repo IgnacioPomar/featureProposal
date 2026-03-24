@@ -34,7 +34,7 @@ This starter solves it once, reusably, for any Spring Boot application.
 
 **Bootstrap.** On first startup with no certificate present, the starter generates a self-signed placeholder so the application can start with HTTPS active. The placeholder is automatically replaced when real material arrives.
 
-**JWS verification.** The starter exposes a `ZaleosCertificateJwsVerifier` bean. If the token carries an `x5c` chain, it validates the full chain before checking the signature. Spring Security applications get a `JwtDecoder` adapter at no extra cost.
+**JWS verification.** The starter exposes a `TlsMaterialJwsVerifier` bean. If the token carries an `x5c` chain, it validates the full chain before checking the signature. Spring Security applications get a `JwtDecoder` adapter at no extra cost.
 
 **Safe rotation.** All writes go through a staging area. The active files are backed up before swap. Any failure triggers automatic rollback.
 

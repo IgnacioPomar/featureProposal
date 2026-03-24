@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -7,6 +7,8 @@ import es.zaleos.certificate.renewer.core.PemActivationResult;
 import es.zaleos.certificate.renewer.core.PemTlsImportAndActivateService;
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
 import es.zaleos.certificate.renewer.core.PemTlsValidationPolicy;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
+import es.zaleos.certificate.renewer.spring.boot.event.TlsMaterialActivatedEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -22,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.env.MockEnvironment;
 
-class ZaleosCertificateOperationServiceTests {
+class TlsMaterialServiceTests {
 
     @Test
     void publishesActivationEventAfterSuccessfulImport(@TempDir Path tempDir) throws Exception {
@@ -36,7 +38,7 @@ class ZaleosCertificateOperationServiceTests {
         );
         List<Object> events = new CopyOnWriteArrayList<>();
 
-        ZaleosCertificateOperationService service = createService(
+        TlsMaterialService service = createService(
                 tempDir,
                 event -> events.add(event),
                 new StubCoreService((sourcePath, externalKeyPath, sourcePassword, targetPaths,
@@ -69,7 +71,7 @@ class ZaleosCertificateOperationServiceTests {
         Files.writeString(outputDir.resolve("private-key.pem.bak"), "old-private-key");
 
         List<Object> events = new CopyOnWriteArrayList<>();
-        ZaleosCertificateOperationService service = createService(
+        TlsMaterialService service = createService(
                 tempDir,
                 event -> events.add(event),
                 new StubCoreService((sourcePath, externalKeyPath, sourcePassword, targetPaths,
@@ -93,7 +95,7 @@ class ZaleosCertificateOperationServiceTests {
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
 
-        ZaleosCertificateOperationService service = createService(
+        TlsMaterialService service = createService(
                 tempDir,
                 event -> { },
                 new StubCoreService((sourcePath, externalKeyPath, sourcePassword, targetPaths,
@@ -142,21 +144,21 @@ class ZaleosCertificateOperationServiceTests {
         }
     }
 
-    private ZaleosCertificateOperationService createService(
+    private TlsMaterialService createService(
             Path tempDir,
             ApplicationEventPublisher eventPublisher,
             PemTlsImportAndActivateService coreService
     ) {
-        ZaleosCertificateProperties properties = new ZaleosCertificateProperties();
+        CertificateRenewerProperties properties = new CertificateRenewerProperties();
         properties.getOutput().setWriteUnencryptedPrivateKey(true);
-        properties.getTargets().computeIfAbsent("web-server", ignored -> new ZaleosCertificateProperties.Target())
+        properties.getTargets().computeIfAbsent("web-server", ignored -> new CertificateRenewerProperties.Target())
                 .setOutputDir(tempDir.resolve("web-server").toString());
 
-        ZaleosCertificateTargetResolver targetResolver =
-                new ZaleosCertificateTargetResolver(new MockEnvironment(), properties);
-        ZaleosCertificatePolicyResolver policyResolver = new ZaleosCertificatePolicyResolver(properties);
+        TargetPathsResolver targetResolver =
+                new TargetPathsResolver(new MockEnvironment(), properties);
+        ValidationPolicyResolver policyResolver = new ValidationPolicyResolver(properties);
 
-        return new ZaleosCertificateOperationService(
+        return new TlsMaterialService(
                 coreService,
                 targetResolver,
                 policyResolver,

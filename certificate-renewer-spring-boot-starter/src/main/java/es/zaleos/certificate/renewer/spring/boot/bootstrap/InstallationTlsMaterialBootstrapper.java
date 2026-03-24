@@ -1,9 +1,11 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.bootstrap;
 
 import es.zaleos.certificate.renewer.core.BouncyCastleRegistrar;
 import es.zaleos.certificate.renewer.core.InstallationTlsMaterialGenerator;
 import es.zaleos.certificate.renewer.core.PemTlsMaterialValidator;
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TargetPathsResolver;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -29,20 +31,20 @@ import org.springframework.util.StringUtils;
 /**
  * Creates installation TLS material automatically when the configured PEM files are missing.
  */
-public class ZaleosCertificateBootstrapInitializer implements InitializingBean {
+public class InstallationTlsMaterialBootstrapper implements InitializingBean {
 
     private static final String BC = "BC";
-    private static final Log LOGGER = LogFactory.getLog(ZaleosCertificateBootstrapInitializer.class);
+    private static final Log LOGGER = LogFactory.getLog(InstallationTlsMaterialBootstrapper.class);
 
     private final Environment environment;
-    private final ZaleosCertificateProperties properties;
-    private final ZaleosCertificateTargetResolver targetResolver;
+    private final CertificateRenewerProperties properties;
+    private final TargetPathsResolver targetResolver;
     private final InstallationTlsMaterialGenerator generator;
 
-    public ZaleosCertificateBootstrapInitializer(
+    public InstallationTlsMaterialBootstrapper(
             Environment environment,
-            ZaleosCertificateProperties properties,
-            ZaleosCertificateTargetResolver targetResolver,
+            CertificateRenewerProperties properties,
+            TargetPathsResolver targetResolver,
             InstallationTlsMaterialGenerator generator
     ) {
         this.environment = environment;
@@ -79,7 +81,7 @@ public class ZaleosCertificateBootstrapInitializer implements InitializingBean {
     private void bootstrapExplicitTargetsIfNeeded() throws Exception {
         for (var entry : properties.getTargets().entrySet()) {
             String targetName = entry.getKey();
-            ZaleosCertificateProperties.Target target = entry.getValue();
+            CertificateRenewerProperties.Target target = entry.getValue();
             if (!target.isBootstrapEnabled() || "web-server".equals(targetName)) {
                 continue;
             }

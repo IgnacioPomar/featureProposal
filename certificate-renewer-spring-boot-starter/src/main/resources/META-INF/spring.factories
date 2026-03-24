@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+es.zaleos.certificate.renewer.spring.boot.bootstrap.InstallationTlsEnvironmentPostProcessor

@@ -160,7 +160,7 @@ public class SetupConfigurator {
     private CertificateConfig generateInstallationCertificate(String sslPassword) {
         ApplicationYamlDefaults defaults = new ApplicationYamlDefaults();
         String defaultOutputDir = defaults.defaultValue("APP_TLS_TARGET_DIR")
-                .orElse("./target/classes/ssl");
+                .orElse("./target/ssl");
         String certCn = "installation.local";
         Path outputDirectory = Path.of(defaultOutputDir).toAbsolutePath().normalize();
 

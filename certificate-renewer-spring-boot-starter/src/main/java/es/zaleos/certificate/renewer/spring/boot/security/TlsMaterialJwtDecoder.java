@@ -1,4 +1,4 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.security;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -8,7 +8,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
- * Spring Security {@link JwtDecoder} backed by {@link ZaleosCertificateJwsVerifier}.
+ * Spring Security {@link JwtDecoder} backed by {@link TlsMaterialJwsVerifier}.
  *
  * <p>Registered as a bean when {@code spring-security-oauth2-resource-server} is on the classpath.
  * Applications using Spring Security resource server configuration can use this decoder
@@ -16,11 +16,11 @@ import org.springframework.security.oauth2.jwt.JwtException;
  *
  * <p>Reloads automatically via {@link TlsMaterialActivatedEvent} handled by the underlying verifier.
  */
-public class ZaleosCertificateJwtDecoder implements JwtDecoder {
+public class TlsMaterialJwtDecoder implements JwtDecoder {
 
-    private final ZaleosCertificateJwsVerifier verifier;
+    private final TlsMaterialJwsVerifier verifier;
 
-    public ZaleosCertificateJwtDecoder(ZaleosCertificateJwsVerifier verifier) {
+    public TlsMaterialJwtDecoder(TlsMaterialJwsVerifier verifier) {
         this.verifier = verifier;
     }
 

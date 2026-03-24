@@ -15,6 +15,8 @@ import java.util.List;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
+import org.bouncycastle.asn1.x509.GeneralName;
+import org.bouncycastle.asn1.x509.GeneralNames;
 import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -28,6 +30,8 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 public class InstallationTlsMaterialGenerator {
 
     private static final String BC = "BC";
+    private static final String DEMO_ORGANIZATION = "Zaleos";
+    private static final String DEMO_ORGANIZATIONAL_UNIT = "Demo Installation TLS";
 
     private final Clock clock;
 
@@ -76,7 +80,8 @@ public class InstallationTlsMaterialGenerator {
         keyPairGenerator.initialize(2048);
         KeyPair keyPair = keyPairGenerator.generateKeyPair();
 
-        X500Name subject = new X500Name("CN=" + commonName);
+        X500Name subject = new X500Name(
+                "CN=" + commonName + ", OU=" + DEMO_ORGANIZATIONAL_UNIT + ", O=" + DEMO_ORGANIZATION);
         Instant now = clock.instant();
         Date notBefore = Date.from(now.minusSeconds(60));
         Date notAfter = Date.from(now.plus(Duration.ofDays(365)));
@@ -94,6 +99,7 @@ public class InstallationTlsMaterialGenerator {
         certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
         certBuilder.addExtension(Extension.keyUsage, true,
                 new KeyUsage(KeyUsage.digitalSignature | KeyUsage.keyEncipherment));
+        certBuilder.addExtension(Extension.subjectAlternativeName, false, installationSubjectAlternativeNames());
 
         ContentSigner signer = new JcaContentSignerBuilder("SHA256withRSA")
                 .setProvider(BC)
@@ -120,5 +126,13 @@ public class InstallationTlsMaterialGenerator {
                 allowUnencryptedPrivateKey
         );
         return sourcePath;
+    }
+
+    private GeneralNames installationSubjectAlternativeNames() {
+        return new GeneralNames(new GeneralName[] {
+                new GeneralName(GeneralName.dNSName, "localhost"),
+                new GeneralName(GeneralName.iPAddress, "127.0.0.1"),
+                new GeneralName(GeneralName.iPAddress, "::1")
+        });
     }
 }

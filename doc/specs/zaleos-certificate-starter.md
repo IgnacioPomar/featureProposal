@@ -94,14 +94,15 @@ es.zaleos.certificate.renewer  (parent pom)
 
 | Component | Responsibility |
 |---|---|
-| `ZaleosCertificateAutoConfiguration` | Conditional bean registration |
-| `ZaleosCertificateProperties` | `@ConfigurationProperties` model under `zaleos.certificate.*` |
-| `ZaleosCertificateBootstrapInitializer` | Triggers bootstrap generation on startup if needed |
-| `ZaleosCertificatePolicyResolver` | Merges global policy with per-target overrides |
-| `ZaleosCertificateTargetResolver` | Resolves file paths per named target |
+| `CertificateRenewerAutoConfiguration` | Conditional bean registration |
+| `CertificateRenewerProperties` | `@ConfigurationProperties` model under `zaleos.certificate.*` |
+| `InstallationTlsEnvironmentPostProcessor` | Early bootstrap hook that creates web-server PEM files before SSL bundle initialization |
+| `InstallationTlsMaterialBootstrapper` | Triggers bootstrap generation on startup if needed |
+| `ValidationPolicyResolver` | Merges global policy with per-target overrides |
+| `TargetPathsResolver` | Resolves file paths per named target |
 | `TlsMaterialActivatedEvent` | Spring `ApplicationEvent` published after successful activation |
-| `ZaleosCertificateJwsVerifier` | Verifies JWS signature and `x5c` certificate chain against configured trust anchor |
-| `JwtDecoder` (adapter) | Spring Security `JwtDecoder` backed by `ZaleosCertificateJwsVerifier`; auto-reloads on activation |
+| `TlsMaterialJwsVerifier` | Verifies JWS signature and `x5c` certificate chain against configured trust anchor |
+| `JwtDecoder` (adapter) | Spring Security `JwtDecoder` backed by `TlsMaterialJwsVerifier`; auto-reloads on activation |
 | Maintenance endpoints | Authenticated REST API for remote import (individually configurable) |
 
 ---
@@ -322,10 +323,10 @@ When the `x5c` header is absent, the verifier falls back to verifying the signat
 
 The starter shall register two beans:
 
-**`ZaleosCertificateJwsVerifier`**
+**`TlsMaterialJwsVerifier`**
 
 ```java
-public interface ZaleosCertificateJwsVerifier {
+public interface TlsMaterialJwsVerifier {
     /**
      * Verifies the JWS compact serialization.
      * Validates the x5c chain against the configured trust anchor (if present)
@@ -343,7 +344,7 @@ public interface ZaleosCertificateJwsVerifier {
 
 **`JwtDecoder`** (Spring Security adapter)
 
-A `JwtDecoder` implementation backed by `ZaleosCertificateJwsVerifier`. Applications using Spring Security can configure it as their decoder without any additional code:
+A `JwtDecoder` implementation backed by `TlsMaterialJwsVerifier`. Applications using Spring Security can configure it as their decoder without any additional code:
 
 ```java
 @Bean
@@ -358,11 +359,11 @@ Both beans are registered as `@ConditionalOnMissingBean`, allowing applications 
 
 ### 10.3 Automatic reload
 
-When a `TlsMaterialActivatedEvent` is published (after any successful import), the `ZaleosCertificateJwsVerifier` shall reload its internal trust material automatically. No application restart or manual intervention is required.
+When a `TlsMaterialActivatedEvent` is published (after any successful import), the `TlsMaterialJwsVerifier` shall reload its internal trust material automatically. No application restart or manual intervention is required.
 
 ### 10.4 Internal use
 
-The starter uses `ZaleosCertificateJwsVerifier` internally to authenticate calls to the maintenance endpoints (§9). This ensures a single, consistent verification path for both internal and application-level use.
+The starter uses `TlsMaterialJwsVerifier` internally to authenticate calls to the maintenance endpoints (§9). This ensures a single, consistent verification path for both internal and application-level use.
 
 ---
 
@@ -397,7 +398,10 @@ On startup, if no usable TLS material is found for a configured target, the star
 | Signature algorithm | SHA256withRSA |
 | Validity | 365 days from generation |
 | Subject CN | `<app-name>.<target-name>.installation.local` |
-| Extensions | Basic Constraints: non-CA; Key Usage: digitalSignature, keyEncipherment |
+| Subject O | `Zaleos` |
+| Subject OU | `Demo Installation TLS` |
+| Subject Alternative Names | `DNS:localhost`, `IP:127.0.0.1`, `IP:::1` |
+| Extensions | Basic Constraints: non-CA; Key Usage: digitalSignature, keyEncipherment; Subject Alternative Name with local development endpoints |
 
 The `.installation.local` suffix in the CN is the marker used by the validator to identify placeholder material and skip `same-*` policy checks on first real import.
 
@@ -529,8 +533,8 @@ The demo application exposes the following CLI commands for operator use:
 
 - Manages certificates used for JWT/JWS signing or verification.
 - Output: PEM files in a configured directory.
-- Hot-reload: `ZaleosCertificateJwsVerifier` bean reloads automatically on `TlsMaterialActivatedEvent` (§10). Applications using Spring Security receive the updated `JwtDecoder` transparently.
-- Applications that do not use Spring Security can inject `ZaleosCertificateJwsVerifier` directly and call `verify()` / `verifyAndExtractClaims()` without managing key reload themselves.
+- Hot-reload: `TlsMaterialJwsVerifier` bean reloads automatically on `TlsMaterialActivatedEvent` (§10). Applications using Spring Security receive the updated `JwtDecoder` transparently.
+- Applications that do not use Spring Security can inject `TlsMaterialJwsVerifier` directly and call `verify()` / `verifyAndExtractClaims()` without managing key reload themselves.
 - Suggested policy override: `same-public-key: false` (key rotation is the intended use case).
 
 ### Generic integration targets (application-defined)
@@ -559,9 +563,9 @@ These metrics enable alerting on approaching expiry and verification that rotati
 
 ### Phase 1 — Consolidation
 
-- [x] `ZaleosCertificateJwsVerifier` bean with `x5c` chain validation and signature verification
+- [x] `TlsMaterialJwsVerifier` bean with `x5c` chain validation and signature verification
 - [x] `JwtDecoder` Spring Security adapter backed by the verifier
-- [x] Import API endpoints protected by `ZaleosCertificateJwsVerifier` (individually enable/disable per endpoint)
+- [x] Import API endpoints protected by `TlsMaterialJwsVerifier` (individually enable/disable per endpoint)
 - [ ] `SslBundleRegistry.updateBundle()` called from the API path (pending Spring Boot 4 PemSslBundle API investigation; file watcher covers the use case)
 - [x] JVM-local mutex preventing concurrent imports
 - [x] `TlsMaterialActivatedEvent` published after each successful activation

@@ -1,6 +1,10 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.maintenance;
 
 import es.zaleos.certificate.renewer.core.PemActivationResult;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TlsMaterialService;
+import es.zaleos.certificate.renewer.spring.boot.security.JwsVerificationException;
+import es.zaleos.certificate.renewer.spring.boot.security.TlsMaterialJwsVerifier;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,19 +28,19 @@ import org.springframework.web.multipart.MultipartFile;
  * The controller itself is only registered when {@code zaleos.certificate.maintenance.enabled=true}.
  */
 @RestController
-public class ZaleosCertificateMaintenanceController {
+public class TlsMaterialMaintenanceController {
 
-    private static final Log LOG = LogFactory.getLog(ZaleosCertificateMaintenanceController.class);
+    private static final Log LOG = LogFactory.getLog(TlsMaterialMaintenanceController.class);
     private static final String MAINTENANCE_CLAIM = "zaleos.certificates.maintenance";
 
-    private final ZaleosCertificateOperationService operationService;
-    private final ZaleosCertificateJwsVerifier jwsVerifier;
-    private final ZaleosCertificateProperties properties;
+    private final TlsMaterialService operationService;
+    private final TlsMaterialJwsVerifier jwsVerifier;
+    private final CertificateRenewerProperties properties;
 
-    public ZaleosCertificateMaintenanceController(
-            ZaleosCertificateOperationService operationService,
-            ZaleosCertificateJwsVerifier jwsVerifier,
-            ZaleosCertificateProperties properties
+    public TlsMaterialMaintenanceController(
+            TlsMaterialService operationService,
+            TlsMaterialJwsVerifier jwsVerifier,
+            CertificateRenewerProperties properties
     ) {
         this.operationService = operationService;
         this.jwsVerifier = jwsVerifier;

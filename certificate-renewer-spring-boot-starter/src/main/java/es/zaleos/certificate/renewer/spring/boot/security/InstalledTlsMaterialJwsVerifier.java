@@ -1,9 +1,12 @@
-package es.zaleos.certificate.renewer.spring.boot.autoconfigure;
+package es.zaleos.certificate.renewer.spring.boot.security;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import es.zaleos.certificate.renewer.core.PemTlsCurrentMaterialLoader;
 import es.zaleos.certificate.renewer.core.PemTlsTargetPaths;
+import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
+import es.zaleos.certificate.renewer.spring.boot.event.TlsMaterialActivatedEvent;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TargetPathsResolver;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
@@ -27,22 +30,22 @@ import org.springframework.context.event.EventListener;
  * Supports RSA and EC signatures via the standard JCA {@link Signature} API.
  * Automatically reloads trust material on {@link TlsMaterialActivatedEvent}.
  */
-public class DefaultZaleosCertificateJwsVerifier implements ZaleosCertificateJwsVerifier {
+public class InstalledTlsMaterialJwsVerifier implements TlsMaterialJwsVerifier {
 
-    private static final Log LOG = LogFactory.getLog(DefaultZaleosCertificateJwsVerifier.class);
+    private static final Log LOG = LogFactory.getLog(InstalledTlsMaterialJwsVerifier.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final ZaleosCertificateTargetResolver targetResolver;
-    private final ZaleosCertificateProperties properties;
+    private final TargetPathsResolver targetResolver;
+    private final CertificateRenewerProperties properties;
     private final PemTlsCurrentMaterialLoader materialLoader;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     private volatile PublicKey currentPublicKey;
     private volatile X509Certificate expectedRootCa;
 
-    public DefaultZaleosCertificateJwsVerifier(
-            ZaleosCertificateTargetResolver targetResolver,
-            ZaleosCertificateProperties properties,
+    public InstalledTlsMaterialJwsVerifier(
+            TargetPathsResolver targetResolver,
+            CertificateRenewerProperties properties,
             PemTlsCurrentMaterialLoader materialLoader
     ) {
         this.targetResolver = targetResolver;
