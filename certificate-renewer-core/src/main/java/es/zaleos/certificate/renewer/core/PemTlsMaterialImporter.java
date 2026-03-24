@@ -26,6 +26,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -57,6 +58,12 @@ public class PemTlsMaterialImporter {
     public PemTlsMaterial importFrom(Path sourcePath, Path externalPrivateKeyPath, char[] sourcePassword) throws Exception {
         if (sourcePath == null || !Files.exists(sourcePath)) {
             throw new IllegalArgumentException("Source path does not exist: " + sourcePath);
+        }
+
+        if (Files.isRegularFile(sourcePath) && isPkcs12File(sourcePath)) {
+            return loadFromPkcs12(sourcePath, sourcePassword)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "No valid certificate and private key material found in: " + sourcePath));
         }
 
         Path workingDirectory = sourcePath;
@@ -364,6 +371,10 @@ public class PemTlsMaterialImporter {
             extractZipArchive(archivePath, tempDirectory);
             return tempDirectory;
         }
+        if (lowerName.endsWith(".tar.gz")) {
+            extractTarGzArchive(archivePath, tempDirectory);
+            return tempDirectory;
+        }
         if (lowerName.endsWith(".tar")) {
             extractTarArchive(archivePath, tempDirectory);
             return tempDirectory;
@@ -387,6 +398,20 @@ public class PemTlsMaterialImporter {
     private void extractTarArchive(Path archivePath, Path destinationDirectory) throws IOException {
         try (InputStream input = Files.newInputStream(archivePath);
              TarArchiveInputStream tar = new TarArchiveInputStream(input)) {
+            TarArchiveEntry entry;
+            while ((entry = tar.getNextTarEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                writeArchiveEntry(destinationDirectory, entry.getName(), tar);
+            }
+        }
+    }
+
+    private void extractTarGzArchive(Path archivePath, Path destinationDirectory) throws IOException {
+        try (InputStream input = Files.newInputStream(archivePath);
+             GzipCompressorInputStream gzip = new GzipCompressorInputStream(input);
+             TarArchiveInputStream tar = new TarArchiveInputStream(gzip)) {
             TarArchiveEntry entry;
             while ((entry = tar.getNextTarEntry()) != null) {
                 if (entry.isDirectory()) {
@@ -426,6 +451,11 @@ public class PemTlsMaterialImporter {
 
     private boolean isPrivateKeyFile(Path path) {
         return hasAnyExtension(path, KEY_EXTENSIONS);
+    }
+
+    private boolean isPkcs12File(Path path) {
+        String fileName = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        return fileName.endsWith(".p12") || fileName.endsWith(".pfx");
     }
 
     private boolean hasAnyExtension(Path path, List<String> allowedExtensions) {

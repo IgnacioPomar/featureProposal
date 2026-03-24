@@ -13,7 +13,6 @@ import java.util.Set;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +23,7 @@ import org.bouncycastle.openssl.jcajce.JceOpenSSLPKCS8EncryptorBuilder;
 import org.bouncycastle.operator.OutputEncryptor;
 
 /**
- * Writes TLS material as PEM files and swaps it safely into place.
+ * Writes the active TLS PEM pair and swaps it safely into place.
  */
 public class PemTlsMaterialWriter {
 
@@ -34,8 +33,8 @@ public class PemTlsMaterialWriter {
             char[] privateKeyPassword,
             boolean allowUnencryptedPrivateKey
     ) throws Exception {
-        if (targetPaths == null || targetPaths.allConfiguredPaths().isEmpty()) {
-            throw new IllegalArgumentException("At least one target PEM path must be configured.");
+        if (targetPaths == null || targetPaths.activePaths().isEmpty()) {
+            throw new IllegalArgumentException("At least one active PEM target path must be configured.");
         }
         if (!allowUnencryptedPrivateKey && (privateKeyPassword == null || privateKeyPassword.length == 0)) {
             throw new IllegalArgumentException(
@@ -48,15 +47,14 @@ public class PemTlsMaterialWriter {
 
         try {
             stagePemFiles(material, targetPaths, privateKeyPassword, stagedFiles, stagingDirectory);
-            createParentDirectories(targetPaths);
-            backupExistingFiles(targetPaths, backupFiles);
+            createParentDirectories(targetPaths.activePaths());
+            backupExistingFiles(targetPaths.activePaths(), backupFiles);
             moveStagedFiles(stagedFiles);
 
             applySecurePermissions(targetPaths);
 
             return new PemActivationResult(
                     material.sourcePath(),
-                    targetPaths.certificatePath(),
                     targetPaths.fullChainPath(),
                     targetPaths.privateKeyPath(),
                     material.expirationDate()
@@ -87,13 +85,6 @@ public class PemTlsMaterialWriter {
             stagedFiles.put(targetPaths.privateKeyPath(),
                     writePrivateKeyFile(stagingDirectory.resolve("private-key.pem"), material.privateKey(), privateKeyPassword));
         }
-    }
-
-    private List<X509Certificate> chainOnly(List<X509Certificate> orderedChain) {
-        if (orderedChain.size() <= 1) {
-            return List.of();
-        }
-        return orderedChain.subList(1, orderedChain.size());
     }
 
     private Path writeCertificateFile(Path target, List<X509Certificate> certificates) throws Exception {
@@ -128,16 +119,16 @@ public class PemTlsMaterialWriter {
         return target;
     }
 
-    private void createParentDirectories(PemTlsTargetPaths targetPaths) throws IOException {
-        for (Path path : targetPaths.allConfiguredPaths()) {
+    private void createParentDirectories(Set<Path> targetPaths) throws IOException {
+        for (Path path : targetPaths) {
             if (path.getParent() != null) {
                 Files.createDirectories(path.getParent());
             }
         }
     }
 
-    private void backupExistingFiles(PemTlsTargetPaths targetPaths, Map<Path, Path> backupFiles) throws IOException {
-        for (Path targetPath : targetPaths.allConfiguredPaths()) {
+    private void backupExistingFiles(Set<Path> targetPaths, Map<Path, Path> backupFiles) throws IOException {
+        for (Path targetPath : targetPaths) {
             if (!Files.exists(targetPath)) {
                 continue;
             }

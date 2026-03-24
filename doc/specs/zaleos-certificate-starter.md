@@ -84,7 +84,7 @@ es.zaleos.certificate.renewer  (parent pom)
 | `PemTlsImportAndActivateService` | Orchestration facade: import → validate → write → activate |
 | `PemTlsMaterialImporter` | Format detection, parsing, key/cert/chain extraction |
 | `PemTlsMaterialValidator` | Policy-based validation against current installed material |
-| `PemTlsMaterialWriter` | Atomic write with staging, swap, and `.bak` preservation |
+| `PemTlsMaterialWriter` | Atomic write with staging, swap, and `.bak` preservation of the active PEM pair |
 | `PemTlsCurrentMaterialLoader` | Loads currently active material for comparison |
 | `InstallationTlsMaterialGenerator` | Generates self-signed bootstrap placeholder |
 | `PemTlsValidationPolicy` | Immutable record defining active validation rules |
@@ -109,12 +109,10 @@ es.zaleos.certificate.renewer  (parent pom)
 
 ## 5. Canonical Output Format
 
-All input material shall be normalized to four PEM files:
+All input material shall be normalized to the active PEM pair used by runtime SSL integrations:
 
 | File | Contents |
 |---|---|
-| `certificate.pem` | Leaf certificate only |
-| `chain.pem` | Intermediate chain without the leaf |
 | `fullchain.pem` | Leaf + full chain (used by Spring SSL bundle) |
 | `private-key.pem` | Private key, encrypted by default |
 
@@ -125,7 +123,7 @@ All input material shall be normalized to four PEM files:
 | PEM | `.pem`, `.crt`, `.cer` | May contain cert + key + chain in a single file |
 | DER binary | `.der`, `.cer` | Automatically converted to PEM |
 | Private key PEM | `.key` | Encrypted (PKCS#8 + AES) or unencrypted |
-| PKCS#12 | `.p12`, `.pfx` | Password required |
+| PKCS#12 | `.p12`, `.pfx` | Supported both as direct files and when found inside a source directory |
 | Archive | `.zip`, `.tar`, `.tar.gz` | Extracted and searched for valid material |
 
 If no usable private key can be extracted, the operation shall fail with a descriptive error before any file is written.

@@ -161,7 +161,6 @@ class TlsMaterialPageControllerTests {
             }
             return new PemActivationResult(
                     sourceDirectory,
-                    this.targetDir.resolve("certificate.pem"),
                     this.targetDir.resolve("fullchain.pem"),
                     this.targetDir.resolve("private-key.pem"),
                     Instant.parse("2035-01-01T00:00:00Z")

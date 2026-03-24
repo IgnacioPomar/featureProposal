@@ -24,17 +24,15 @@ class PemTlsMaterialWriterTests {
     // -------------------------------------------------------------------------
 
     @Test
-    void writesAllFourPemFiles(@TempDir Path tempDir) throws Exception {
+    void writesActivePemFiles(@TempDir Path tempDir) throws Exception {
         PemTlsMaterial material = generateAndImport(tempDir, "source", "service.local");
         Path targetDir = tempDir.resolve("target");
 
         writer.writeAtomically(material, toPaths(targetDir), new char[0], true);
 
-        assertThat(targetDir.resolve("certificate.pem")).isRegularFile();
-        assertThat(targetDir.resolve("chain.pem")).isRegularFile();
         assertThat(targetDir.resolve("fullchain.pem")).isRegularFile();
-        assertThat(targetDir.resolve("private-key.pem")).isRegularFile();
-    }
+        assertThat(targetDir.resolve("private-key.pem")).isRegularFile();        
+   }
 
     // -------------------------------------------------------------------------
     // filesystem permissions (POSIX only)
@@ -91,6 +89,22 @@ class PemTlsMaterialWriterTests {
         Path backupPath = targetDir.resolve("fullchain.pem.bak");
         assertThat(backupPath).isRegularFile();
         assertThat(Files.readString(backupPath)).isEqualTo(originalFullchain);
+    }
+
+    @Test
+    void leavesCompanionPemFilesUntouchedWhenTheyAreConfigured(@TempDir Path tempDir) throws Exception {
+        PemTlsMaterial material = generateAndImport(tempDir, "source", "service.local");
+        Path targetDir = tempDir.resolve("target");
+        Files.createDirectories(targetDir);
+        Files.writeString(targetDir.resolve("certificate.pem"), "legacy-leaf");
+        Files.writeString(targetDir.resolve("chain.pem"), "legacy-chain");
+
+        writer.writeAtomically(material, toPaths(targetDir), new char[0], true);
+
+        assertThat(Files.readString(targetDir.resolve("certificate.pem"))).isEqualTo("legacy-leaf");
+        assertThat(Files.readString(targetDir.resolve("chain.pem"))).isEqualTo("legacy-chain");
+        assertThat(targetDir.resolve("certificate.pem.bak")).doesNotExist();
+        assertThat(targetDir.resolve("chain.pem.bak")).doesNotExist();
     }
 
     @Test

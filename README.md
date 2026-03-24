@@ -26,7 +26,7 @@ This starter solves it once, reusably, for any Spring Boot application.
 
 ## Key Capabilities
 
-**PEM normalisation.** Accepts PEM, DER, PKCS#12, and ZIP/TAR archives. Always produces the same four output files: `certificate.pem`, `chain.pem`, `fullchain.pem`, `private-key.pem`.
+**PEM normalisation.** Accepts PEM, DER, direct PKCS#12 files, and ZIP/TAR/TAR.GZ archives. Activates the runtime PEM pair: `fullchain.pem` and `private-key.pem`.
 
 **Hot-reload.** The running HTTPS server reloads when certificate files change — no JVM restart. API-triggered rotations reload synchronously and confirm the new certificate in the response.
 

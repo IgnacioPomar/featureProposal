@@ -76,7 +76,7 @@ class InstalledTlsMaterialJwsVerifierTests {
         PemTlsMaterial installed = importer.importFrom(targetDir, null, new char[0]);
 
         InstalledTlsMaterialJwsVerifier verifier =
-                createVerifier(targetDir, anchorDir.resolve("certificate.pem"));
+                createVerifier(targetDir, anchorDir.resolve("fullchain.pem"));
         String token = sign(
                 installed.privateKey(),
                 Map.of("alg", "RS256", "x5c", List.of(Base64.getEncoder().encodeToString(

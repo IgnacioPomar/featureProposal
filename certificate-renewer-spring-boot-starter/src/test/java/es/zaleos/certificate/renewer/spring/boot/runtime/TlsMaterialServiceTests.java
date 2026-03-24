@@ -39,7 +39,6 @@ class TlsMaterialServiceTests {
         Path outputDir = tempDir.resolve("web-server");
         PemActivationResult expectedResult = new PemActivationResult(
                 tempDir.resolve("source"),
-                outputDir.resolve("certificate.pem"),
                 outputDir.resolve("fullchain.pem"),
                 outputDir.resolve("private-key.pem"),
                 Instant.parse("2030-01-01T00:00:00Z")
@@ -120,7 +119,6 @@ class TlsMaterialServiceTests {
                     }
                     return new PemActivationResult(
                             sourcePath,
-                            targetPaths.certificatePath(),
                             targetPaths.fullChainPath(),
                             targetPaths.privateKeyPath(),
                             Instant.now()
@@ -180,7 +178,6 @@ class TlsMaterialServiceTests {
                     generator.generate(outputDir, new char[0], "updated.installation.local", true);
                     return new PemActivationResult(
                             sourcePath,
-                            targetPaths.certificatePath(),
                             targetPaths.fullChainPath(),
                             targetPaths.privateKeyPath(),
                             Instant.parse("2035-01-01T00:00:00Z")

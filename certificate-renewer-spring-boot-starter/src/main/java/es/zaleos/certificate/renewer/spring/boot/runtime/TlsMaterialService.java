@@ -129,7 +129,7 @@ public class TlsMaterialService {
         try {
             PemTlsTargetPaths targetPaths = targetResolver.resolve(targetName);
             boolean restored = false;
-            for (Path activePath : targetPaths.allConfiguredPaths()) {
+            for (Path activePath : targetPaths.activePaths()) {
                 Path bakPath = Path.of(activePath + ".bak");
                 if (Files.exists(bakPath)) {
                     Files.move(bakPath, activePath, StandardCopyOption.REPLACE_EXISTING);

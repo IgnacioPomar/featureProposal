@@ -52,8 +52,8 @@ public class InstallationTlsMaterialGenerator {
     ) throws Exception {
         return generate(
                 new PemTlsTargetPaths(
-                        outputDirectory.resolve("certificate.pem"),
-                        outputDirectory.resolve("chain.pem"),
+                        null,
+                        null,
                         outputDirectory.resolve("fullchain.pem"),
                         outputDirectory.resolve("private-key.pem")
                 ),

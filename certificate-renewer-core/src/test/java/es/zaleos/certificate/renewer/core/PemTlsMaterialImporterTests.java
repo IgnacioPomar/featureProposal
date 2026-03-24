@@ -13,6 +13,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -43,15 +44,29 @@ class PemTlsMaterialImporterTests {
         generator.generate(sourceDir, new char[0], "service.local", true);
         PemTlsMaterial generated = importer.importFrom(sourceDir, null, new char[0]);
 
-        // PKCS12 is only supported when the .p12 file resides inside a directory:
-        // importFrom(file) routes through extractArchiveToTempDirectory, which only
-        // handles .zip/.tar. The directory scan path is what calls loadFromPkcs12.
         char[] p12Password = "test-p12-password".toCharArray();
         Path p12Dir = tempDir.resolve("p12dir");
         Files.createDirectories(p12Dir);
         writePkcs12(p12Dir.resolve("test.p12"), generated, p12Password);
 
         PemTlsMaterial material = importer.importFrom(p12Dir, null, p12Password);
+
+        assertThat(material.leafCertificate().getSubjectX500Principal())
+                .isEqualTo(generated.leafCertificate().getSubjectX500Principal());
+        assertThat(material.privateKey()).isNotNull();
+    }
+
+    @Test
+    void importFromDirectPkcs12File_returnsValidMaterial(@TempDir Path tempDir) throws Exception {
+        Path sourceDir = tempDir.resolve("source");
+        generator.generate(sourceDir, new char[0], "service.local", true);
+        PemTlsMaterial generated = importer.importFrom(sourceDir, null, new char[0]);
+
+        char[] password = "direct-pkcs12-password".toCharArray();
+        Path p12Path = tempDir.resolve("material.p12");
+        writePkcs12(p12Path, generated, password);
+
+        PemTlsMaterial material = importer.importFrom(p12Path, null, password);
 
         assertThat(material.leafCertificate().getSubjectX500Principal())
                 .isEqualTo(generated.leafCertificate().getSubjectX500Principal());
@@ -79,6 +94,19 @@ class PemTlsMaterialImporterTests {
         createTar(tarPath, sourceDir, "fullchain.pem", "private-key.pem");
 
         PemTlsMaterial material = importer.importFrom(tarPath, null, new char[0]);
+
+        assertThat(material.leafCertificate()).isNotNull();
+        assertThat(material.privateKey()).isNotNull();
+    }
+
+    @Test
+    void importFromTarGzArchive_returnsValidMaterial(@TempDir Path tempDir) throws Exception {
+        Path sourceDir = tempDir.resolve("source");
+        generator.generate(sourceDir, new char[0], "service.local", true);
+        Path archivePath = tempDir.resolve("certs.tar.gz");
+        createTarGz(archivePath, sourceDir, "fullchain.pem", "private-key.pem");
+
+        PemTlsMaterial material = importer.importFrom(archivePath, null, new char[0]);
 
         assertThat(material.leafCertificate()).isNotNull();
         assertThat(material.privateKey()).isNotNull();
@@ -278,6 +306,21 @@ class PemTlsMaterialImporterTests {
                 tos.putArchiveEntry(entry);
                 tos.write(content);
                 tos.closeArchiveEntry();
+            }
+        }
+    }
+
+    private void createTarGz(Path target, Path sourceDir, String... fileNames) throws IOException {
+        try (OutputStream outputStream = Files.newOutputStream(target);
+             GzipCompressorOutputStream gzip = new GzipCompressorOutputStream(outputStream);
+             TarArchiveOutputStream tar = new TarArchiveOutputStream(gzip)) {
+            for (String fileName : fileNames) {
+                byte[] content = Files.readAllBytes(sourceDir.resolve(fileName));
+                TarArchiveEntry entry = new TarArchiveEntry(fileName);
+                entry.setSize(content.length);
+                tar.putArchiveEntry(entry);
+                tar.write(content);
+                tar.closeArchiveEntry();
             }
         }
     }
