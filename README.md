@@ -89,7 +89,7 @@ zaleos:
   certificate:
     targets:
       web-server:
-        output-dir: ./ssl
+        output-dir: ${APP_TLS_TARGET_DIR:./ssl}
 
 spring:
   ssl:
@@ -110,7 +110,7 @@ Key environment variables:
 | Variable | Purpose |
 |---|---|
 | `APP_TLS_PRIVATE_KEY_PASSWORD` | Private key password |
-| `APP_TLS_TARGET_DIR` | Override for the certificate output directory |
+| `APP_TLS_TARGET_DIR` | Override for the active PEM output directory used by the `web-server` target |
 | `TLS_SOURCE_DIR` | Source directory for `--import-tls-material` |
 | `TLS_SOURCE_PASSWORD` | Source material password during import |
 

@@ -24,7 +24,6 @@ class SslApplicationTests {
                 () -> "file:" + TEST_SSL_DIR.resolve("fullchain.pem"));
         registry.add("spring.ssl.bundle.pem.server.keystore.private-key",
                 () -> "file:" + TEST_SSL_DIR.resolve("private-key.pem"));
-        registry.add("app.tls-page.target-dir", TEST_SSL_DIR::toString);
         registry.add("zaleos.certificate.targets.web-server.output-dir", TEST_SSL_DIR::toString);
     }
 

@@ -60,7 +60,6 @@ public class SetupConfigurator {
             System.out.println("spring.datasource.password=" + maskIfNeeded(dbConfig.password()));
             System.out.println("zaleos.certificate.targets.web-server.output-dir="
                     + certificateConfig.outputDirectory().toAbsolutePath());
-            System.out.println("app.tls-page.target-dir=" + certificateConfig.outputDirectory().toAbsolutePath());
             System.out.println();
 
             String outputPath = askWithDefault(scanner, "Save definitive setup file", "./config/application.properties");
@@ -437,7 +436,6 @@ public class SetupConfigurator {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("spring.ssl.bundle.pem.server.keystore.private-key-password", sslPassword);
         values.put("zaleos.certificate.targets.web-server.output-dir", certificateConfig.outputDirectory().toString());
-        values.put("app.tls-page.target-dir", certificateConfig.outputDirectory().toString());
         values.put("spring.datasource.url", dbConfig.jdbcUrl());
         values.put("spring.datasource.username", dbConfig.username());
         values.put("spring.datasource.password", dbConfig.password());

@@ -41,7 +41,6 @@ app:
     version: ${APP_OPENAPI_VERSION:v1}
   tls-page:
     path: ${APP_TLS_PAGE_PATH:/certificate-renewal}
-    target-dir: ${APP_TLS_TARGET_DIR:./target/ssl}
     target-name: ${APP_TLS_TARGET_NAME:web-server}
 
 zaleos:
@@ -52,7 +51,7 @@ zaleos:
     targets:
       web-server:
         type: filesystem
-        output-dir: ./target/ssl
+        output-dir: ${APP_TLS_TARGET_DIR:./target/ssl}
         activate: true
 
 springdoc:

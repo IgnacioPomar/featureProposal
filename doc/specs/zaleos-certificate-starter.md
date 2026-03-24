@@ -464,7 +464,7 @@ zaleos:
     targets:
       web-server:                        # built-in target for HTTPS
         type: filesystem
-        output-dir: ./ssl
+        output-dir: ${APP_TLS_TARGET_DIR:./ssl}
         activate: true
 
       jwt-signer:                        # example non-HTTPS target
@@ -480,7 +480,7 @@ zaleos:
 | Variable | Description |
 |---|---|
 | `APP_TLS_PRIVATE_KEY_PASSWORD` | Private key password for the server TLS bundle |
-| `APP_TLS_TARGET_DIR` | Override for the TLS material target directory |
+| `APP_TLS_TARGET_DIR` | Override for the active PEM output directory used by the `web-server` target |
 | `TLS_SOURCE_DIR` | Source directory for `--import-tls-material` |
 | `TLS_SOURCE_PASSWORD` | Password for source material during import |
 
