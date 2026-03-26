@@ -45,6 +45,8 @@ app:
 
 zaleos:
   certificate:
+    maintenance:
+      enabled: true
     output:
       # Demo only — do NOT enable in production; set APP_TLS_PRIVATE_KEY_PASSWORD instead.
       write-unencrypted-private-key: true
@@ -53,6 +55,20 @@ zaleos:
         type: filesystem
         output-dir: ${APP_TLS_TARGET_DIR:./target/ssl}
         activate: true
+      jwt-signer:
+        type: filesystem
+        output-dir: ${APP_JWT_SIGNER_TARGET_DIR:./target/ssl/jwt-signer}
+        activate: true
+        bootstrap-enabled: true
+        policy:
+          same-public-key: false
+      jwt-verifier:
+        type: filesystem
+        output-dir: ${APP_JWT_VERIFIER_TARGET_DIR:./target/ssl/jwt-verifier}
+        activate: true
+        bootstrap-enabled: true
+        policy:
+          same-public-key: false
 
 springdoc:
   api-docs:

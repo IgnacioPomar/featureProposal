@@ -1,62 +1,214 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$SCRIPT_DIR/../../testdata/certs"
+AUTHORITIES_DIR="$BASE_DIR/_authorities"
+PFX_PASSWORD="mipassword"
+COMMON_SUBJECT="/C=ES/ST=Madrid/L=Madrid/O=Test/OU=ArtifactDemo/CN=localhost"
+COMMON_SAN="DNS:localhost,IP:127.0.0.1"
 
-generate_set() {
-  DAYS=$1
-
-  PEM_DIR="$BASE_DIR/${DAYS}d-pem"
-  PFX_DIR="$BASE_DIR/${DAYS}d-pfx"
-
-  mkdir -p "$PEM_DIR" "$PFX_DIR"
-
-  echo "Generating $DAYS-day certificate set..."
-
-  # 1. Private key
-  openssl genrsa -out "$PEM_DIR/key.pem" 2048
-
-  # 2. CSR
-  openssl req -new \
-    -key "$PEM_DIR/key.pem" \
-    -out "$PEM_DIR/csr.pem" \
-    -subj "/C=ES/ST=Madrid/L=Madrid/O=Test/OU=TestPReprod/CN=localhost"
-
-  # 3. Self-signed cert (simulating CA)
-  openssl x509 -req \
-    -in "$PEM_DIR/csr.pem" \
-    -signkey "$PEM_DIR/key.pem" \
-    -out "$PEM_DIR/cert.pem" \
-    -days "$DAYS" \
-    -extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1")
-
-  # 4. Chain (simulación: en real vendría de la CA)
-  cp "$PEM_DIR/cert.pem" "$PEM_DIR/chain.pem"
-
-  # 5. Fullchain = cert + chain
-  cat "$PEM_DIR/cert.pem" "$PEM_DIR/chain.pem" > "$PEM_DIR/fullchain.pem"
-
-  # 6. PFX (PKCS#12)
-  openssl pkcs12 -export \
-    -out "$PFX_DIR/keystore.p12" \
-    -inkey "$PEM_DIR/key.pem" \
-    -in "$PEM_DIR/cert.pem" \
-    -certfile "$PEM_DIR/chain.pem" \
-    -name "test-cert-$DAYS" \
-    -passout pass:mipassword
-
-  # cleanup
-  rm "$PEM_DIR/csr.pem"
-
-  echo "Done $DAYS days"
+reset_base_dir() {
+  rm -rf "$BASE_DIR"
+  mkdir -p "$BASE_DIR" "$AUTHORITIES_DIR"
 }
 
-# Clean previous
-rm -rf "$BASE_DIR"
-mkdir -p "$BASE_DIR"
+write_ca_extensions() {
+  local file="$1"
+  local pathlen="$2"
+  cat > "$file" <<EOF
+[v3_ca]
+basicConstraints=critical,CA:true,pathlen:${pathlen}
+keyUsage=critical,keyCertSign,cRLSign
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always,issuer
+EOF
+}
 
-generate_set 180
-generate_set 360
+write_leaf_extensions() {
+  local file="$1"
+  local san="$2"
+  cat > "$file" <<EOF
+[v3_leaf]
+basicConstraints=critical,CA:false
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid,issuer
+subjectAltName=${san}
+EOF
+}
 
-echo "All certificates generated."
+generate_rsa_key() {
+  local output="$1"
+  local bits="$2"
+  openssl genrsa -out "$output" "$bits" >/dev/null 2>&1
+}
+
+generate_ec_key() {
+  local output="$1"
+  openssl ecparam -name prime256v1 -genkey -noout -out "$output" >/dev/null 2>&1
+}
+
+create_root_ca() {
+  local name="$1"
+  local common_name="$2"
+  local dir="$AUTHORITIES_DIR/$name"
+  local extensions_file="$dir/root-ext.cnf"
+
+  mkdir -p "$dir"
+  generate_rsa_key "$dir/private-key.pem" 2048
+  write_ca_extensions "$extensions_file" 1
+
+  openssl req -new -key "$dir/private-key.pem" -out "$dir/root.csr" -subj "/C=ES/ST=Madrid/L=Madrid/O=Test/OU=ArtifactDemo/CN=${common_name}" >/dev/null 2>&1
+  openssl x509 -req \
+    -in "$dir/root.csr" \
+    -signkey "$dir/private-key.pem" \
+    -out "$dir/certificate.pem" \
+    -days 3650 \
+    -sha256 \
+    -extfile "$extensions_file" \
+    -extensions v3_ca >/dev/null 2>&1
+  rm -f "$dir/root.csr" "$extensions_file"
+}
+
+create_intermediate_ca() {
+  local name="$1"
+  local common_name="$2"
+  local issuer_dir="$3"
+  local dir="$AUTHORITIES_DIR/$name"
+  local extensions_file="$dir/intermediate-ext.cnf"
+
+  mkdir -p "$dir"
+  generate_rsa_key "$dir/private-key.pem" 2048
+  write_ca_extensions "$extensions_file" 0
+
+  openssl req -new -key "$dir/private-key.pem" -out "$dir/intermediate.csr" -subj "/C=ES/ST=Madrid/L=Madrid/O=Test/OU=ArtifactDemo/CN=${common_name}" >/dev/null 2>&1
+  openssl x509 -req \
+    -in "$dir/intermediate.csr" \
+    -CA "$AUTHORITIES_DIR/$issuer_dir/certificate.pem" \
+    -CAkey "$AUTHORITIES_DIR/$issuer_dir/private-key.pem" \
+    -CAcreateserial \
+    -out "$dir/certificate.pem" \
+    -days 1825 \
+    -sha256 \
+    -extfile "$extensions_file" \
+    -extensions v3_ca >/dev/null 2>&1
+  rm -f "$dir/intermediate.csr" "$extensions_file"
+}
+
+generate_material_set() {
+  local name="$1"
+  local days="$2"
+  local issuer_dir="$3"
+  local leaf_key="$4"
+  local subject="$5"
+  local san="$6"
+  shift 6
+  local chain_dirs=("$@")
+  local last_chain_index=$((${#chain_dirs[@]} - 1))
+  local root_chain_dir="${chain_dirs[$last_chain_index]}"
+
+  local pem_dir="$BASE_DIR/${name}-pem"
+  local pfx_dir="$BASE_DIR/${name}-pfx"
+  local extensions_file="$pem_dir/leaf-ext.cnf"
+
+  mkdir -p "$pem_dir" "$pfx_dir"
+  write_leaf_extensions "$extensions_file" "$san"
+
+  openssl req -new -key "$leaf_key" -out "$pem_dir/leaf.csr" -subj "$subject" >/dev/null 2>&1
+  openssl x509 -req \
+    -in "$pem_dir/leaf.csr" \
+    -CA "$AUTHORITIES_DIR/$issuer_dir/certificate.pem" \
+    -CAkey "$AUTHORITIES_DIR/$issuer_dir/private-key.pem" \
+    -CAcreateserial \
+    -out "$pem_dir/certificate.pem" \
+    -days "$days" \
+    -sha256 \
+    -extfile "$extensions_file" \
+    -extensions v3_leaf >/dev/null 2>&1
+
+  cp "$pem_dir/certificate.pem" "$pem_dir/cert.pem"
+  cp "$leaf_key" "$pem_dir/private-key.pem"
+  cp "$leaf_key" "$pem_dir/key.pem"
+
+  : > "$pem_dir/chain.pem"
+  for chain_dir in "${chain_dirs[@]}"; do
+    cat "$AUTHORITIES_DIR/$chain_dir/certificate.pem" >> "$pem_dir/chain.pem"
+  done
+
+  cat "$pem_dir/certificate.pem" "$pem_dir/chain.pem" > "$pem_dir/fullchain.pem"
+  cp "$AUTHORITIES_DIR/$issuer_dir/certificate.pem" "$pem_dir/issuer.pem"
+  cp "$AUTHORITIES_DIR/$root_chain_dir/certificate.pem" "$pem_dir/root-ca.pem"
+
+  openssl pkcs12 -export \
+    -out "$pfx_dir/keystore.p12" \
+    -inkey "$pem_dir/private-key.pem" \
+    -in "$pem_dir/certificate.pem" \
+    -certfile "$pem_dir/chain.pem" \
+    -name "${name}" \
+    -passout "pass:${PFX_PASSWORD}" >/dev/null 2>&1
+
+  rm -f "$pem_dir/leaf.csr" "$extensions_file"
+}
+
+write_scenarios_manifest() {
+  cat > "$BASE_DIR/SCENARIOS.txt" <<EOF
+Certificate scenarios generated by .devcontainer/scripts/generaCerts.sh
+
+Good renewal scenarios:
+- 180d-pem / 180d-pfx: first real import candidate.
+- 360d-pem / 360d-pfx: valid renewal of 180d using the same root CA, same chain, same subject, same SAN, and same public key.
+
+Failure scenarios:
+- bad-different-root-ca-pem / -pfx: fails same-root-ca first.
+- bad-different-chain-pem / -pfx: fails same-chain while keeping the same root CA.
+- bad-different-subject-pem / -pfx: fails same-subject.
+- bad-different-san-pem / -pfx: fails same-san.
+- bad-different-public-key-pem / -pfx: fails same-public-key.
+- bad-minimum-key-size-pem / -pfx: RSA 1024 leaf; useful to trigger minimum-key-size when same-* checks are bypassed or relaxed.
+- bad-minimum-key-algorithm-pem / -pfx: EC leaf; useful to trigger minimum-key-algorithm when same-* checks are bypassed or relaxed.
+
+Notes:
+- All PEM scenarios contain certificate.pem, chain.pem, fullchain.pem, private-key.pem and legacy aliases cert.pem/key.pem.
+- PKCS#12 password for every generated keystore is: ${PFX_PASSWORD}
+EOF
+}
+
+create_shared_inputs() {
+  create_root_ca "shared-root" "artifact-demo-root.local"
+  create_intermediate_ca "shared-intermediate-a" "artifact-demo-intermediate-a.local" "shared-root"
+  create_intermediate_ca "shared-intermediate-b" "artifact-demo-intermediate-b.local" "shared-root"
+
+  create_root_ca "alternate-root" "artifact-demo-alt-root.local"
+  create_intermediate_ca "alternate-intermediate" "artifact-demo-alt-intermediate.local" "alternate-root"
+
+  mkdir -p "$AUTHORITIES_DIR/shared-leaf" "$AUTHORITIES_DIR/alternate-leaf" "$AUTHORITIES_DIR/small-leaf" "$AUTHORITIES_DIR/ec-leaf"
+  generate_rsa_key "$AUTHORITIES_DIR/shared-leaf/private-key.pem" 2048
+  generate_rsa_key "$AUTHORITIES_DIR/alternate-leaf/private-key.pem" 2048
+  generate_rsa_key "$AUTHORITIES_DIR/small-leaf/private-key.pem" 1024
+  generate_ec_key "$AUTHORITIES_DIR/ec-leaf/private-key.pem"
+}
+
+generate_all_sets() {
+  echo "Generating valid renewal scenarios..."
+  generate_material_set "180d" 180 "shared-intermediate-a" "$AUTHORITIES_DIR/shared-leaf/private-key.pem" "$COMMON_SUBJECT" "$COMMON_SAN" "shared-intermediate-a" "shared-root"
+  generate_material_set "360d" 360 "shared-intermediate-a" "$AUTHORITIES_DIR/shared-leaf/private-key.pem" "$COMMON_SUBJECT" "$COMMON_SAN" "shared-intermediate-a" "shared-root"
+
+  echo "Generating validation failure scenarios..."
+  generate_material_set "bad-different-root-ca" 360 "alternate-intermediate" "$AUTHORITIES_DIR/shared-leaf/private-key.pem" "$COMMON_SUBJECT" "$COMMON_SAN" "alternate-intermediate" "alternate-root"
+  generate_material_set "bad-different-chain" 360 "shared-intermediate-b" "$AUTHORITIES_DIR/shared-leaf/private-key.pem" "$COMMON_SUBJECT" "$COMMON_SAN" "shared-intermediate-b" "shared-root"
+  generate_material_set "bad-different-subject" 360 "shared-intermediate-a" "$AUTHORITIES_DIR/shared-leaf/private-key.pem" "/C=ES/ST=Madrid/L=Madrid/O=Test/OU=ArtifactDemo/CN=localhost-renewed" "$COMMON_SAN" "shared-intermediate-a" "shared-root"
+  generate_material_set "bad-different-san" 360 "shared-intermediate-a" "$AUTHORITIES_DIR/shared-leaf/private-key.pem" "$COMMON_SUBJECT" "DNS:localhost,DNS:renewed.local" "shared-intermediate-a" "shared-root"
+  generate_material_set "bad-different-public-key" 360 "shared-intermediate-a" "$AUTHORITIES_DIR/alternate-leaf/private-key.pem" "$COMMON_SUBJECT" "$COMMON_SAN" "shared-intermediate-a" "shared-root"
+  generate_material_set "bad-minimum-key-size" 360 "shared-intermediate-a" "$AUTHORITIES_DIR/small-leaf/private-key.pem" "$COMMON_SUBJECT" "$COMMON_SAN" "shared-intermediate-a" "shared-root"
+  generate_material_set "bad-minimum-key-algorithm" 360 "shared-intermediate-a" "$AUTHORITIES_DIR/ec-leaf/private-key.pem" "$COMMON_SUBJECT" "$COMMON_SAN" "shared-intermediate-a" "shared-root"
+}
+
+reset_base_dir
+create_shared_inputs
+generate_all_sets
+write_scenarios_manifest
+
+echo "Certificates generated under $BASE_DIR"
+cat "$BASE_DIR/SCENARIOS.txt"

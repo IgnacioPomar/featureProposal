@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class TlsMaterialImporter {
 
+    private static final String DEFAULT_TARGET_NAME = "web-server";
+    private static final String PROP_TARGET_NAME = "tls.import.target-name";
     private static final Logger LOGGER = LogManager.getLogger(TlsMaterialImporter.class);
     private static final String PROP_SOURCE_DIR = "tls.import.source-dir";
     private static final String PROP_EXTERNAL_KEY_PATH = "tls.import.external-key-path";
@@ -40,6 +42,16 @@ public class TlsMaterialImporter {
      */
     public void execute() {
         try {
+            String targetName = optionalString(
+                    PROP_TARGET_NAME,
+                    "tls.target-name",
+                    "target-name",
+                    "target",
+                    "TLS_TARGET_NAME",
+                    "APP_TLS_TARGET_NAME",
+                    "SSL_RENEW_TARGET_NAME"
+            ).orElse(DEFAULT_TARGET_NAME);
+
             Path sourceDirectory = requirePath(
                     PROP_SOURCE_DIR,
                     "tls.import.directory",
@@ -71,12 +83,17 @@ public class TlsMaterialImporter {
                     "APP_CERT_RENEW_PASSWORD"
             ).toCharArray();
 
-            PemActivationResult result = importAndActivate(sourceDirectory, externalKeyPath, externalMaterialPassword);
+            PemActivationResult result = importAndActivate(
+                    targetName,
+                    sourceDirectory,
+                    externalKeyPath,
+                    externalMaterialPassword
+            );
 
-            LOGGER.info("TLS material import completed. Source={}, Expires={}",
-                    result.sourcePath(), result.expirationDate());
-            System.out.println("[TLS] TLS material imported successfully. Source="
-                    + result.sourcePath() + ", expiration=" + result.expirationDate());
+            LOGGER.info("TLS material import completed. Target={}, Source={}, Expires={}",
+                    targetName, result.sourcePath(), result.expirationDate());
+            System.out.println("[TLS] TLS material imported successfully. Target="
+                    + targetName + ", source=" + result.sourcePath() + ", expiration=" + result.expirationDate());
         } catch (Exception exception) {
             LOGGER.error("TLS material import failed: {}", exception.getMessage());
             throw new IllegalStateException("TLS material import failed: " + exception.getMessage(), exception);
@@ -88,7 +105,7 @@ public class TlsMaterialImporter {
             Path externalKeyPath,
             char[] externalMaterialPassword
     ) throws Exception {
-        return importAndActivate(sourceDirectory, externalKeyPath, externalMaterialPassword, false);
+        return importAndActivate(DEFAULT_TARGET_NAME, sourceDirectory, externalKeyPath, externalMaterialPassword, false);
     }
 
     public PemActivationResult importAndActivate(
@@ -97,8 +114,27 @@ public class TlsMaterialImporter {
             char[] externalMaterialPassword,
             boolean immediateReload
     ) throws Exception {
+        return importAndActivate(DEFAULT_TARGET_NAME, sourceDirectory, externalKeyPath, externalMaterialPassword, immediateReload);
+    }
+
+    public PemActivationResult importAndActivate(
+            String targetName,
+            Path sourceDirectory,
+            Path externalKeyPath,
+            char[] externalMaterialPassword
+    ) throws Exception {
+        return importAndActivate(targetName, sourceDirectory, externalKeyPath, externalMaterialPassword, false);
+    }
+
+    public PemActivationResult importAndActivate(
+            String targetName,
+            Path sourceDirectory,
+            Path externalKeyPath,
+            char[] externalMaterialPassword,
+            boolean immediateReload
+    ) throws Exception {
         return operationService.importAndActivate(
-                "web-server",
+                targetName,
                 sourceDirectory,
                 externalKeyPath,
                 externalMaterialPassword,

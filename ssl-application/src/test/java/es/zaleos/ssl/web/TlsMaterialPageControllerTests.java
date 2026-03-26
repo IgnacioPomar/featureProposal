@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import es.zaleos.certificate.renewer.core.InstallationTlsMaterialGenerator;
 import es.zaleos.certificate.renewer.core.PemActivationResult;
+import es.zaleos.certificate.renewer.core.PemTlsImportAndActivateService;
 import es.zaleos.certificate.renewer.spring.boot.autoconfigure.CertificateRenewerProperties;
 import es.zaleos.certificate.renewer.spring.boot.runtime.TargetPathsResolver;
+import es.zaleos.certificate.renewer.spring.boot.runtime.TlsMaterialService;
+import es.zaleos.certificate.renewer.spring.boot.runtime.ValidationPolicyResolver;
 import es.zaleos.ssl.cli.TlsMaterialImporter;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,96 +25,157 @@ class TlsMaterialPageControllerTests {
     private final InstallationTlsMaterialGenerator generator = new InstallationTlsMaterialGenerator();
 
     @Test
-    void pageShowsCurrentCertificateAndUploadForm(@TempDir Path tempDir) throws Exception {
-        Path targetDir = tempDir.resolve("target");
+    void pageShowsUnifiedControlsAndRollbackWhenBackupExists(@TempDir Path tempDir) throws Exception {
+        Path targetDir = tempDir.resolve("web-server");
         generator.generate(targetDir, new char[0], "current.installation.local", true);
+        Files.copy(targetDir.resolve("fullchain.pem"), targetDir.resolve("fullchain.pem.bak"));
 
-        CapturingTlsMaterialImporter importer = new CapturingTlsMaterialImporter(targetDir);
-        TlsMaterialPageController controller = createController(targetDir, importer);
+        TlsMaterialPageController controller = createController(targetDir, null, new CapturingTlsMaterialImporter(targetDir));
 
-        String html = controller.page(request()).getBody();
+        String html = controller.page(request(), null).getBody();
 
-        assertThat(html).contains("Variables affecting the certificate and its renewal");
-        assertThat(html).contains("Current certificate");
-        assertThat(html).contains("Upload PEM files");
-        assertThat(html).doesNotContain("Copy link for another browser");
-        assertThat(html).contains("<h2>Import</h2>");
-        assertThat(html).doesNotContain("Comparison after POST");
-        assertThat(html).doesNotContain("Refresh page");
-        assertThat(indexOf(html, "<h2>Import</h2>"))
-                .isLessThan(indexOf(html, "Variables affecting the certificate and its renewal"));
+        assertThat(html).contains("Certificate Renewal Demo");
+        assertThat(html).contains("Authentication");
+        assertThat(html).contains("Use incorrect certificate");
+        assertThat(html).contains("Destination target");
+        assertThat(html).contains("Import from directory");
+        assertThat(html).contains("Import uploaded PEM");
+        assertThat(html).contains("Rollback current backup");
+        assertThat(html).contains("Configured validation policy");
+        assertThat(html).contains("same-root-ca");
+        assertThat(html).contains("Scenario guide for generated test certificates");
+        assertThat(html).contains("Recommended scenarios per target");
+        assertThat(html).contains("jwt-signer");
+        assertThat(html).contains("jwt-verifier");
+        assertThat(html).contains("180d-pem");
+        assertThat(html).contains("Bootstrap placeholder certificates ending in");
+        assertThat(html).doesNotContain("JWS maintenance");
     }
 
     @Test
-    void directoryImportExplainsFreshBrowserVerificationAndHidesCurrentSection(@TempDir Path tempDir) throws Exception {
-        Path targetDir = tempDir.resolve("target");
+    void noAuthFolderImportUsesLocalImporterFlow(@TempDir Path tempDir) throws Exception {
+        Path targetDir = tempDir.resolve("web-server");
         generator.generate(targetDir, new char[0], "before.installation.local", true);
 
         CapturingTlsMaterialImporter importer = new CapturingTlsMaterialImporter(targetDir);
         importer.setUpdatedCommonName("after.installation.local");
-        TlsMaterialPageController controller = createController(targetDir, importer);
+        TlsMaterialPageController controller = createController(targetDir, null, importer);
 
-        String html = controller.importTlsMaterial(request(), tempDir.resolve("source").toString(), "").getBody();
+        String html = controller.submit(
+                request(),
+                null,
+                "no-auth",
+                false,
+                "import-folder",
+                tempDir.resolve("source").toString(),
+                "",
+                emptyFile("fullchain"),
+                emptyFile("privateKey")
+        ).getBody();
 
+        assertThat(importer.lastTargetName).isEqualTo("web-server");
         assertThat(importer.lastImmediateReload).isTrue();
-        assertThat(html).contains("another browser, a private window, or a fresh TLS client connection");
-        assertThat(html).contains("Certificate comparison");
+        assertThat(html).contains("same Spring-managed import flow as the CLI command");
         assertThat(html).contains("before.installation.local");
         assertThat(html).contains("after.installation.local");
-        assertThat(html).doesNotContain("Variables affecting the certificate and its renewal");
-        assertThat(html).doesNotContain("Refresh page");
-        assertThat(indexOf(html, "<h2>Verification</h2>"))
-                .isLessThan(indexOf(html, "<h2>Certificate comparison</h2>"));
     }
 
     @Test
-    void uploadImportsPemFilesAndUsesImmediateReload(@TempDir Path tempDir) throws Exception {
-        Path targetDir = tempDir.resolve("target");
-        generator.generate(targetDir, new char[0], "before-upload.installation.local", true);
+    void remoteFolderImportUsesRequestedAuthModeAndWrongCertificateToggle(@TempDir Path tempDir) throws Exception {
+        Path targetDir = tempDir.resolve("web-server");
+        generator.generate(targetDir, new char[0], "before.installation.local", true);
 
-        Path uploadSource = tempDir.resolve("upload-source");
-        generator.generate(uploadSource, new char[0], "uploaded.installation.local", true);
-
-        CapturingTlsMaterialImporter importer = new CapturingTlsMaterialImporter(targetDir);
-        TlsMaterialPageController controller = createController(targetDir, importer);
-
-        MockMultipartFile fullchain = new MockMultipartFile(
-                "fullchain",
-                "fullchain.pem",
-                "application/x-pem-file",
-                Files.readAllBytes(uploadSource.resolve("fullchain.pem"))
-        );
-        MockMultipartFile privateKey = new MockMultipartFile(
-                "privateKey",
-                "private-key.pem",
-                "application/x-pem-file",
-                Files.readAllBytes(uploadSource.resolve("private-key.pem"))
+        RecordingMaintenanceJwsRequestService maintenanceService = new RecordingMaintenanceJwsRequestService();
+        TlsMaterialPageController controller = createController(
+                targetDir,
+                maintenanceService,
+                new CapturingTlsMaterialImporter(targetDir)
         );
 
-        String html = controller.uploadTlsMaterial(request(), fullchain, privateKey, "").getBody();
+        String html = controller.submit(
+                request(),
+                null,
+                "jwt",
+                true,
+                "import-folder",
+                tempDir.resolve("source").toString(),
+                "",
+                emptyFile("fullchain"),
+                emptyFile("privateKey")
+        ).getBody();
 
-        assertThat(importer.lastImmediateReload).isTrue();
-        assertThat(importer.lastImportedFullchainPem).contains("BEGIN CERTIFICATE");
-        assertThat(importer.lastImportedPrivateKeyPem).contains("PRIVATE KEY");
-        assertThat(html).contains("Upload import completed");
-        assertThat(html).contains("uploaded.installation.local");
-        assertThat(html).contains("Copy link for another browser");
-        assertThat(indexOf(html, "<h2>Verification</h2>"))
-                .isLessThan(indexOf(html, "<h2>Certificate comparison</h2>"));
+        assertThat(maintenanceService.lastAuthMode).isEqualTo(MaintenanceJwsRequestService.AuthMode.JWT);
+        assertThat(maintenanceService.lastUsedWrongCertificate).isTrue();
+        assertThat(html).contains("Remote maintenance response");
+        assertThat(html).contains("JWT");
+        assertThat(html).contains("Detected change");
     }
 
-    private int indexOf(String html, String needle) {
-        return html.indexOf(needle);
+    @Test
+    void rollbackUsesLocalRollbackWhenBackupExists(@TempDir Path tempDir) throws Exception {
+        Path targetDir = tempDir.resolve("web-server");
+        generator.generate(targetDir, new char[0], "rolled-back.installation.local", true);
+        Files.copy(targetDir.resolve("fullchain.pem"), targetDir.resolve("fullchain.pem.bak"));
+        Files.copy(targetDir.resolve("private-key.pem"), targetDir.resolve("private-key.pem.bak"));
+        generator.generate(targetDir, new char[0], "current.installation.local", true);
+
+        RecordingTlsMaterialService rollbackService = new RecordingTlsMaterialService(targetDir);
+        TlsMaterialPageController controller = createController(
+                targetDir,
+                new RecordingMaintenanceJwsRequestService(),
+                new CapturingTlsMaterialImporter(targetDir),
+                rollbackService
+        );
+
+        String html = controller.submit(
+                request(),
+                null,
+                "no-auth",
+                false,
+                "rollback",
+                "",
+                "",
+                emptyFile("fullchain"),
+                emptyFile("privateKey")
+        ).getBody();
+
+        assertThat(rollbackService.lastRollbackTarget).isEqualTo("web-server");
+        assertThat(html).contains("Rollback completed");
+        assertThat(html).contains("rolled-back.installation.local");
     }
 
-    private TlsMaterialPageController createController(Path targetDir, CapturingTlsMaterialImporter importer) {
+    private TlsMaterialPageController createController(
+            Path targetDir,
+            RecordingMaintenanceJwsRequestService maintenanceService,
+            CapturingTlsMaterialImporter importer
+    ) {
+        return createController(targetDir, maintenanceService, importer, new RecordingTlsMaterialService(targetDir));
+    }
+
+    private TlsMaterialPageController createController(
+            Path targetDir,
+            RecordingMaintenanceJwsRequestService maintenanceService,
+            CapturingTlsMaterialImporter importer,
+            RecordingTlsMaterialService tlsMaterialService
+    ) {
         CertificateRenewerProperties properties = new CertificateRenewerProperties();
         properties.getTargets().computeIfAbsent("web-server", ignored -> new CertificateRenewerProperties.Target())
                 .setOutputDir(targetDir.toString());
+
         TargetPathsResolver targetResolver = new TargetPathsResolver(new MockEnvironment(), properties);
-        TlsMaterialPageController controller = new TlsMaterialPageController(importer, targetResolver);
-        ReflectionTestUtils.setField(controller, "targetName", "web-server");
+        TlsMaterialPageController controller = new TlsMaterialPageController(
+                importer,
+                tlsMaterialService,
+                maintenanceService == null ? new RecordingMaintenanceJwsRequestService() : maintenanceService,
+                targetResolver,
+                properties
+        );
+        ReflectionTestUtils.setField(controller, "defaultTargetName", "web-server");
         return controller;
+    }
+
+    private MockMultipartFile emptyFile(String name) {
+        return new MockMultipartFile(name, new byte[0]);
     }
 
     private MockHttpServletRequest request() {
@@ -127,8 +191,7 @@ class TlsMaterialPageControllerTests {
 
         private final Path targetDir;
         private boolean lastImmediateReload;
-        private String lastImportedFullchainPem;
-        private String lastImportedPrivateKeyPem;
+        private String lastTargetName;
         private String updatedCommonName = "after.installation.local";
 
         private CapturingTlsMaterialImporter(Path targetDir) {
@@ -142,29 +205,84 @@ class TlsMaterialPageControllerTests {
 
         @Override
         public PemActivationResult importAndActivate(
+                String targetName,
                 Path sourceDirectory,
                 Path externalKeyPath,
                 char[] externalMaterialPassword,
                 boolean immediateReload
         ) throws Exception {
+            this.lastTargetName = targetName;
             this.lastImmediateReload = immediateReload;
-            Path uploadedFullchain = sourceDirectory.resolve("fullchain.pem");
-            Path uploadedPrivateKey = sourceDirectory.resolve("private-key.pem");
-            if (Files.exists(uploadedFullchain) && Files.exists(uploadedPrivateKey)) {
-                this.lastImportedFullchainPem = Files.readString(uploadedFullchain);
-                this.lastImportedPrivateKeyPem = Files.readString(uploadedPrivateKey);
-                Files.createDirectories(this.targetDir);
-                Files.copy(uploadedFullchain, this.targetDir.resolve("fullchain.pem"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                Files.copy(uploadedPrivateKey, this.targetDir.resolve("private-key.pem"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            } else {
-                generator.generate(this.targetDir, new char[0], this.updatedCommonName, true);
-            }
+            generator.generate(this.targetDir, new char[0], this.updatedCommonName, true);
             return new PemActivationResult(
                     sourceDirectory,
                     this.targetDir.resolve("fullchain.pem"),
                     this.targetDir.resolve("private-key.pem"),
                     Instant.parse("2035-01-01T00:00:00Z")
             );
+        }
+    }
+
+    private static final class RecordingMaintenanceJwsRequestService extends MaintenanceJwsRequestService {
+
+        private AuthMode lastAuthMode;
+        private boolean lastUsedWrongCertificate;
+
+        private RecordingMaintenanceJwsRequestService() {
+            super(
+                    new TargetPathsResolver(new MockEnvironment(), new CertificateRenewerProperties()),
+                    new CertificateRenewerProperties(),
+                    new MockEnvironment()
+            );
+        }
+
+        @Override
+        public InvocationResult importFromFolder(
+                String baseUrl,
+                String targetName,
+                String sourceDirectory,
+                String password,
+                AuthMode authMode,
+                boolean useWrongCertificate
+        ) {
+            this.lastAuthMode = authMode;
+            this.lastUsedWrongCertificate = useWrongCertificate;
+            return new InvocationResult(
+                    baseUrl + "/internal/certificates/import-from-folder",
+                    401,
+                    java.util.Map.of("target", targetName),
+                    "{\"error\":\"invalid token\"}",
+                    authMode,
+                    useWrongCertificate
+            );
+        }
+    }
+
+    private static final class RecordingTlsMaterialService extends TlsMaterialService {
+
+        private final Path targetDir;
+        private String lastRollbackTarget;
+
+        private RecordingTlsMaterialService(Path targetDir) {
+            super(
+                    new PemTlsImportAndActivateService(),
+                    new TargetPathsResolver(new MockEnvironment(), new CertificateRenewerProperties()),
+                    new ValidationPolicyResolver(new CertificateRenewerProperties()),
+                    new CertificateRenewerProperties(),
+                    new MockEnvironment(),
+                    event -> { },
+                    null
+            );
+            this.targetDir = targetDir;
+        }
+
+        @Override
+        public void rollback(String targetName, boolean immediateReload) throws Exception {
+            this.lastRollbackTarget = targetName;
+            Files.copy(this.targetDir.resolve("fullchain.pem.bak"), this.targetDir.resolve("fullchain.pem"),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(this.targetDir.resolve("private-key.pem.bak"), this.targetDir.resolve("private-key.pem"),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
     }
 }

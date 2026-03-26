@@ -268,6 +268,8 @@ zaleos.certificate.maintenance:
     path: /internal/certificates/rollback
 ```
 
+All active maintenance endpoints accept an optional request parameter named `target`. When omitted, the starter uses `web-server` for backward compatibility. This allows the same authenticated maintenance flow to rotate non-HTTPS named targets such as `jwt-signer` without introducing target-specific endpoints.
+
 ### 9.2 Authentication
 
 The active maintenance endpoints shall be protected with JWS tokens (see §10). The token shall be signed with the **currently installed TLS certificate**. This creates a natural trust bootstrap: only a party that already holds the active certificate can authorize a rotation.
@@ -299,6 +301,14 @@ The maintenance API supports three operation modes, controlled by the `op` token
 | Import and activate | `import-and-activate` | Validate, write, and immediately activate material. Default. |
 | Import only | `import-only` | Validate and write material to the staging directory (`<output-dir>/.staged/<timestamp>/`) without activating. |
 | Activate staged | `activate-staged` | Activate the most recent valid staged material without re-importing. |
+
+Request parameters for the currently implemented maintenance endpoints:
+
+| Endpoint | Required params | Optional params |
+|---|---|---|
+| `POST /internal/certificates/import-from-folder` | `sourceDir` | `target` (defaults to `web-server`), `password` |
+| `POST /internal/certificates/import-upload` | multipart `fullchain`, multipart `privateKey` | `target` (defaults to `web-server`), `password` |
+| `POST /internal/certificates/rollback` | none | `target` (defaults to `web-server`) |
 
 The staging directory path is `<output-dir>/.staged/<timestamp>/`. When `activate-staged` is called without an explicit operation ID, the most recent valid staged set is used.
 
@@ -516,7 +526,7 @@ The demo application exposes the following CLI commands for operator use:
 |---|---|
 | `--setup` | Configures a new installation: generates bootstrap material, runs Liquibase, writes `config/application.properties` |
 | `--check-installation` | Verifies installation state: PEM files, database, Liquibase tables. Produces an HTML report. Runs without a Spring context for fast execution. |
-| `--import-tls-material` | Imports and activates TLS material from a local directory or file |
+| `--import-tls-material` | Imports and activates certificate material from a local directory or file; supports `--tls.import.target-name=<target>` to rotate named targets |
 | `--renew-certificate` | Legacy alias for `--import-tls-material` |
 
 ---

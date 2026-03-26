@@ -32,6 +32,7 @@ public class TlsMaterialMaintenanceController {
 
     private static final Log LOG = LogFactory.getLog(TlsMaterialMaintenanceController.class);
     private static final String MAINTENANCE_CLAIM = "zaleos.certificates.maintenance";
+    private static final String DEFAULT_TARGET = "web-server";
 
     private final TlsMaterialService operationService;
     private final TlsMaterialJwsVerifier jwsVerifier;
@@ -55,6 +56,7 @@ public class TlsMaterialMaintenanceController {
     @PostMapping("${zaleos.certificate.maintenance.import-from-folder.path:/internal/certificates/import-from-folder}")
     public ResponseEntity<Map<String, Object>> importFromFolder(
             @RequestHeader("Authorization") String authorizationHeader,
+            @RequestParam(value = "target", required = false, defaultValue = DEFAULT_TARGET) String target,
             @RequestParam("sourceDir") String sourceDir,
             @RequestParam(value = "password", required = false, defaultValue = "") String password
     ) {
@@ -65,13 +67,13 @@ public class TlsMaterialMaintenanceController {
 
         try {
             PemActivationResult result = operationService.importAndActivate(
-                    "web-server",
+                    target,
                     Path.of(sourceDir),
                     null,
                     password.toCharArray(),
                     true
             );
-            return ResponseEntity.ok(activationResponse(result));
+            return ResponseEntity.ok(activationResponse(target, result));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -90,6 +92,7 @@ public class TlsMaterialMaintenanceController {
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, Object>> importUpload(
             @RequestHeader("Authorization") String authorizationHeader,
+            @RequestParam(value = "target", required = false, defaultValue = DEFAULT_TARGET) String target,
             @RequestParam("fullchain") MultipartFile fullchain,
             @RequestParam("privateKey") MultipartFile privateKey,
             @RequestParam(value = "password", required = false, defaultValue = "") String password
@@ -115,13 +118,13 @@ public class TlsMaterialMaintenanceController {
             privateKey.transferTo(privateKeyPath);
 
             PemActivationResult result = operationService.importAndActivate(
-                    "web-server",
+                    target,
                     tempDir,
                     null,
                     password.toCharArray(),
                     true
             );
-            return ResponseEntity.ok(activationResponse(result));
+            return ResponseEntity.ok(activationResponse(target, result));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -137,7 +140,8 @@ public class TlsMaterialMaintenanceController {
      */
     @PostMapping("${zaleos.certificate.maintenance.rollback.path:/internal/certificates/rollback}")
     public ResponseEntity<Map<String, Object>> rollback(
-            @RequestHeader("Authorization") String authorizationHeader
+            @RequestHeader("Authorization") String authorizationHeader,
+            @RequestParam(value = "target", required = false, defaultValue = DEFAULT_TARGET) String target
     ) {
         if (!properties.getMaintenance().getRollback().isEnabled()) {
             return ResponseEntity.notFound().build();
@@ -145,8 +149,8 @@ public class TlsMaterialMaintenanceController {
         authenticate(authorizationHeader);
 
         try {
-            operationService.rollback("web-server", true);
-            return ResponseEntity.ok(Map.of("status", "rolled back"));
+            operationService.rollback(target, true);
+            return ResponseEntity.ok(Map.of("status", "rolled back", "target", target));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
@@ -167,8 +171,9 @@ public class TlsMaterialMaintenanceController {
         }
     }
 
-    private Map<String, Object> activationResponse(PemActivationResult result) {
+    private Map<String, Object> activationResponse(String target, PemActivationResult result) {
         return Map.of(
+                "target", target,
                 "status", "activated",
                 "expirationDate", result.expirationDate() != null ? result.expirationDate().toString() : "unknown"
         );

@@ -49,6 +49,7 @@ This starter solves it once, reusably, for any Spring Boot application.
 
 **Quick checks:**
 ```bash
+curl -k https://localhost:8443/
 curl -k https://localhost:8443/hello
 curl -k https://localhost:8443/api-docs
 curl -k https://localhost:8443/certificate-renewal
@@ -74,9 +75,14 @@ curl -k https://localhost:8443/certificate-renewal
 ```bash
 ./mvnw -q -pl ssl-application -am spring-boot:run \
   -Dspring-boot.run.arguments="--import-tls-material \
+    --tls.import.target-name=jwt-signer \
     --tls-source-dir=/path/to/certs \
     --tls-source-password=changeit"
 ```
+
+**Browser test index** — open `https://localhost:8443/` to find:
+- direct links for `hello`, Swagger/OpenAPI, CRUD, actuator, and metrics checks,
+- a single certificate renewal demo page that can run local import, JWS/JWT remote import, bad-signature checks, and rollback for the selected target.
 
 ---
 
